@@ -239,71 +239,144 @@ BYTE TranslateModifiersToHK(UINT rMod) {
     return hkMod;
 }
 
+// DPI Awareness Helper Functions
+UINT GetWindowDpi(HWND hwnd) {
+    typedef UINT(WINAPI* GetDpiForWindowProc)(HWND);
+    HMODULE hUser32 = GetModuleHandleW(L"user32.dll");
+    if (hUser32) {
+        GetDpiForWindowProc pGetDpiForWindow = (GetDpiForWindowProc)GetProcAddress(hUser32, "GetDpiForWindow");
+        if (pGetDpiForWindow) {
+            return pGetDpiForWindow(hwnd);
+        }
+    }
+    // Fallback to system DPI
+    HDC hdc = GetDC(NULL);
+    int dpi = GetDeviceCaps(hdc, LOGPIXELSX);
+    ReleaseDC(NULL, hdc);
+    return dpi;
+}
+
+int ScaleDpi(int val, UINT dpi) {
+    return MulDiv(val, dpi, 96);
+}
+
+HFONT CreateDpiFont(UINT dpi) {
+    // 9pt Segoe UI scaled to DPI
+    int height = -MulDiv(9, dpi, 72);
+    return CreateFontW(height, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+        OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+}
+
+void UpdateLayout(HWND hWnd, UINT dpi) {
+    HWND hGrpDisplay = GetDlgItem(hWnd, ID_GRP_DISPLAY);
+    HWND hLblDisplay = GetDlgItem(hWnd, ID_LBL_DISPLAY);
+    HWND hCbDisplay = GetDlgItem(hWnd, ID_CB_DISPLAY);
+    HWND hLblI2C = GetDlgItem(hWnd, ID_LBL_I2C);
+    HWND hCbI2C = GetDlgItem(hWnd, ID_CB_I2C);
+
+    HWND hGrpSwitch = GetDlgItem(hWnd, ID_GRP_SWITCH);
+    HWND hLblInput = GetDlgItem(hWnd, ID_LBL_INPUT);
+    HWND hCbInput = GetDlgItem(hWnd, ID_CB_INPUT);
+    HWND hLblCustom = GetDlgItem(hWnd, ID_LBL_CUSTOM);
+    HWND hTxtCustom = GetDlgItem(hWnd, ID_TXT_CUSTOM);
+
+    HWND hGrpHotkey = GetDlgItem(hWnd, ID_GRP_HOTKEY);
+    HWND hLblHotkey = GetDlgItem(hWnd, ID_LBL_HOTKEY);
+    HWND hHkHotkey = GetDlgItem(hWnd, ID_HK_HOTKEY);
+
+    HWND hBtnTest = GetDlgItem(hWnd, ID_BTN_TEST);
+    HWND hBtnSave = GetDlgItem(hWnd, ID_BTN_SAVE);
+    HWND hBtnCancel = GetDlgItem(hWnd, ID_BTN_CANCEL);
+
+    if (hGrpDisplay) MoveWindow(hGrpDisplay, ScaleDpi(10, dpi), ScaleDpi(10, dpi), ScaleDpi(365, dpi), ScaleDpi(100, dpi), TRUE);
+    if (hLblDisplay) MoveWindow(hLblDisplay, ScaleDpi(20, dpi), ScaleDpi(30, dpi), ScaleDpi(100, dpi), ScaleDpi(18, dpi), TRUE);
+    if (hCbDisplay) MoveWindow(hCbDisplay, ScaleDpi(20, dpi), ScaleDpi(50, dpi), ScaleDpi(345, dpi), ScaleDpi(150, dpi), TRUE);
+    if (hLblI2C) MoveWindow(hLblI2C, ScaleDpi(20, dpi), ScaleDpi(80, dpi), ScaleDpi(120, dpi), ScaleDpi(18, dpi), TRUE);
+    if (hCbI2C) MoveWindow(hCbI2C, ScaleDpi(150, dpi), ScaleDpi(77, dpi), ScaleDpi(100, dpi), ScaleDpi(100, dpi), TRUE);
+
+    if (hGrpSwitch) MoveWindow(hGrpSwitch, ScaleDpi(10, dpi), ScaleDpi(120, dpi), ScaleDpi(365, dpi), ScaleDpi(105, dpi), TRUE);
+    if (hLblInput) MoveWindow(hLblInput, ScaleDpi(20, dpi), ScaleDpi(140, dpi), ScaleDpi(100, dpi), ScaleDpi(18, dpi), TRUE);
+    if (hCbInput) MoveWindow(hCbInput, ScaleDpi(20, dpi), ScaleDpi(160, dpi), ScaleDpi(345, dpi), ScaleDpi(150, dpi), TRUE);
+    if (hLblCustom) MoveWindow(hLblCustom, ScaleDpi(20, dpi), ScaleDpi(193, dpi), ScaleDpi(120, dpi), ScaleDpi(18, dpi), TRUE);
+    if (hTxtCustom) MoveWindow(hTxtCustom, ScaleDpi(150, dpi), ScaleDpi(190, dpi), ScaleDpi(100, dpi), ScaleDpi(20, dpi), TRUE);
+
+    if (hGrpHotkey) MoveWindow(hGrpHotkey, ScaleDpi(10, dpi), ScaleDpi(235, dpi), ScaleDpi(365, dpi), ScaleDpi(70, dpi), TRUE);
+    if (hLblHotkey) MoveWindow(hLblHotkey, ScaleDpi(20, dpi), ScaleDpi(252, dpi), ScaleDpi(340, dpi), ScaleDpi(18, dpi), TRUE);
+    if (hHkHotkey) MoveWindow(hHkHotkey, ScaleDpi(20, dpi), ScaleDpi(272, dpi), ScaleDpi(345, dpi), ScaleDpi(22, dpi), TRUE);
+
+    if (hBtnTest) MoveWindow(hBtnTest, ScaleDpi(10, dpi), ScaleDpi(320, dpi), ScaleDpi(100, dpi), ScaleDpi(26, dpi), TRUE);
+    if (hBtnSave) MoveWindow(hBtnSave, ScaleDpi(175, dpi), ScaleDpi(320, dpi), ScaleDpi(95, dpi), ScaleDpi(26, dpi), TRUE);
+    if (hBtnCancel) MoveWindow(hBtnCancel, ScaleDpi(280, dpi), ScaleDpi(320, dpi), ScaleDpi(95, dpi), ScaleDpi(26, dpi), TRUE);
+}
+
 // Settings Dialog / Window Procedure
 LRESULT CALLBACK SettingsWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
     switch (message) {
     case WM_CREATE: {
-        // Create Segoe UI Font
-        g_hFont = CreateFontW(15, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
-            OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
-
         // Target Display Group
         HWND hGrpDisplay = CreateWindowExW(0, L"BUTTON", L"Target Display", WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
-            10, 10, 365, 100, hWnd, (HMENU)ID_GRP_DISPLAY, NULL, NULL);
+            0, 0, 0, 0, hWnd, (HMENU)ID_GRP_DISPLAY, NULL, NULL);
 
         CreateWindowExW(0, L"STATIC", L"Select Display:", WS_CHILD | WS_VISIBLE | SS_LEFT,
-            20, 30, 100, 18, hWnd, (HMENU)ID_LBL_DISPLAY, NULL, NULL);
+            0, 0, 0, 0, hWnd, (HMENU)ID_LBL_DISPLAY, NULL, NULL);
 
         HWND hCbDisplay = CreateWindowExW(0, L"COMBOBOX", NULL, WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP,
-            20, 50, 345, 150, hWnd, (HMENU)ID_CB_DISPLAY, NULL, NULL);
+            0, 0, 0, 0, hWnd, (HMENU)ID_CB_DISPLAY, NULL, NULL);
 
         CreateWindowExW(0, L"STATIC", L"I2C Source Address:", WS_CHILD | WS_VISIBLE | SS_LEFT,
-            20, 80, 120, 18, hWnd, (HMENU)ID_LBL_I2C, NULL, NULL);
+            0, 0, 0, 0, hWnd, (HMENU)ID_LBL_I2C, NULL, NULL);
 
         HWND hCbI2C = CreateWindowExW(0, L"COMBOBOX", NULL, WS_CHILD | WS_VISIBLE | CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP,
-            150, 77, 100, 100, hWnd, (HMENU)ID_CB_I2C, NULL, NULL);
+            0, 0, 0, 0, hWnd, (HMENU)ID_CB_I2C, NULL, NULL);
 
         // Switch Command Group
         CreateWindowExW(0, L"BUTTON", L"Switch Command", WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
-            10, 120, 365, 105, hWnd, (HMENU)ID_GRP_SWITCH, NULL, NULL);
+            0, 0, 0, 0, hWnd, (HMENU)ID_GRP_SWITCH, NULL, NULL);
 
         CreateWindowExW(0, L"STATIC", L"Target Input:", WS_CHILD | WS_VISIBLE | SS_LEFT,
-            20, 140, 100, 18, hWnd, (HMENU)ID_LBL_INPUT, NULL, NULL);
+            0, 0, 0, 0, hWnd, (HMENU)ID_LBL_INPUT, NULL, NULL);
 
         HWND hCbInput = CreateWindowExW(0, L"COMBOBOX", NULL, WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP,
-            20, 160, 345, 150, hWnd, (HMENU)ID_CB_INPUT, NULL, NULL);
+            0, 0, 0, 0, hWnd, (HMENU)ID_CB_INPUT, NULL, NULL);
 
         HWND hLblCustom = CreateWindowExW(0, L"STATIC", L"Custom Value (Hex):", WS_CHILD | WS_VISIBLE | SS_LEFT,
-            20, 193, 120, 18, hWnd, (HMENU)ID_LBL_CUSTOM, NULL, NULL);
+            0, 0, 0, 0, hWnd, (HMENU)ID_LBL_CUSTOM, NULL, NULL);
 
         HWND hTxtCustom = CreateWindowExW(0, L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL | WS_TABSTOP,
-            150, 190, 100, 20, hWnd, (HMENU)ID_TXT_CUSTOM, NULL, NULL);
+            0, 0, 0, 0, hWnd, (HMENU)ID_TXT_CUSTOM, NULL, NULL);
 
         // Global Hotkey Group
         CreateWindowExW(0, L"BUTTON", L"Global Hotkey", WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
-            10, 235, 365, 70, hWnd, (HMENU)ID_GRP_HOTKEY, NULL, NULL);
+            0, 0, 0, 0, hWnd, (HMENU)ID_GRP_HOTKEY, NULL, NULL);
 
         CreateWindowExW(0, L"STATIC", L"Record hotkey to trigger input switch:", WS_CHILD | WS_VISIBLE | SS_LEFT,
-            20, 252, 340, 18, hWnd, (HMENU)ID_LBL_HOTKEY, NULL, NULL);
+            0, 0, 0, 0, hWnd, (HMENU)ID_LBL_HOTKEY, NULL, NULL);
 
         HWND hHkHotkey = CreateWindowExW(0, HOTKEY_CLASS, NULL, WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP,
-            20, 272, 345, 22, hWnd, (HMENU)ID_HK_HOTKEY, NULL, NULL);
+            0, 0, 0, 0, hWnd, (HMENU)ID_HK_HOTKEY, NULL, NULL);
 
         // Action Buttons
         CreateWindowExW(0, L"BUTTON", L"Test Switch", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP,
-            10, 320, 100, 26, hWnd, (HMENU)ID_BTN_TEST, NULL, NULL);
+            0, 0, 0, 0, hWnd, (HMENU)ID_BTN_TEST, NULL, NULL);
 
         CreateWindowExW(0, L"BUTTON", L"Save", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON | WS_TABSTOP,
-            175, 320, 95, 26, hWnd, (HMENU)ID_BTN_SAVE, NULL, NULL);
+            0, 0, 0, 0, hWnd, (HMENU)ID_BTN_SAVE, NULL, NULL);
 
         CreateWindowExW(0, L"BUTTON", L"Cancel", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP,
-            280, 320, 95, 26, hWnd, (HMENU)ID_BTN_CANCEL, NULL, NULL);
+            0, 0, 0, 0, hWnd, (HMENU)ID_BTN_CANCEL, NULL, NULL);
+
+        // Get window DPI and initialize scaled font
+        UINT dpi = GetWindowDpi(hWnd);
+        g_hFont = CreateDpiFont(dpi);
 
         // Apply Segoe UI Font to all child controls
         EnumChildWindows(hWnd, [](HWND child, LPARAM lp) -> BOOL {
             SendMessageW(child, WM_SETFONT, (WPARAM)g_hFont, TRUE);
             return TRUE;
         }, 0);
+
+        // Layout controls scaled by DPI
+        UpdateLayout(hWnd, dpi);
 
         // Populate Displays
         std::vector<DetectedDisplay> displays = EnumerateDisplays();
@@ -462,6 +535,33 @@ LRESULT CALLBACK SettingsWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM 
         break;
     }
 
+    case WM_DPICHANGED: {
+        UINT newDpi = LOWORD(wParam);
+        RECT* prcSuggestedWindow = (RECT*)lParam;
+
+        // Resize window to suggested size
+        SetWindowPos(hWnd, NULL,
+            prcSuggestedWindow->left,
+            prcSuggestedWindow->top,
+            prcSuggestedWindow->right - prcSuggestedWindow->left,
+            prcSuggestedWindow->bottom - prcSuggestedWindow->top,
+            SWP_NOZORDER | SWP_NOACTIVATE);
+
+        // Recreate font matching new DPI
+        if (g_hFont) DeleteObject(g_hFont);
+        g_hFont = CreateDpiFont(newDpi);
+
+        // Apply new font to children
+        EnumChildWindows(hWnd, [](HWND child, LPARAM lp) -> BOOL {
+            SendMessageW(child, WM_SETFONT, (WPARAM)g_hFont, TRUE);
+            return TRUE;
+        }, 0);
+
+        // Recalculate positions
+        UpdateLayout(hWnd, newDpi);
+        break;
+    }
+
     case WM_CLOSE:
         DestroyWindow(hWnd);
         break;
@@ -502,9 +602,11 @@ void ShowSettingsDialog(HWND hParentWnd, HINSTANCE hInst) {
         classRegistered = true;
     }
 
-    // Dialog layout coordinates
-    int w = 400;
-    int h = 400;
+    // Scale initial window size based on system DPI
+    UINT dpi = GetWindowDpi(GetDesktopWindow());
+    int w = ScaleDpi(400, dpi);
+    int h = ScaleDpi(400, dpi);
+
     int screenWidth = GetSystemMetrics(SM_CXSCREEN);
     int screenHeight = GetSystemMetrics(SM_CYSCREEN);
     int x = (screenWidth - w) / 2;
@@ -584,6 +686,17 @@ LRESULT CALLBACK HiddenWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lP
 
 // Main execution function
 int RunTrayApp(HINSTANCE hInstance) {
+    // Set DPI Awareness context (Per-Monitor Aware V2) dynamically
+    typedef BOOL(WINAPI* SetProcessDpiAwarenessContextProc)(DPI_AWARENESS_CONTEXT);
+    HMODULE hUser32 = GetModuleHandleW(L"user32.dll");
+    if (hUser32) {
+        SetProcessDpiAwarenessContextProc pSetProcessDpiAwarenessContext =
+            (SetProcessDpiAwarenessContextProc)GetProcAddress(hUser32, "SetProcessDpiAwarenessContext");
+        if (pSetProcessDpiAwarenessContext) {
+            pSetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+        }
+    }
+
     // Initialize Common Controls (Hotkey & standard classes)
     INITCOMMONCONTROLSEX icex;
     icex.dwSize = sizeof(INITCOMMONCONTROLSEX);
