@@ -1,6 +1,7 @@
 #pragma comment(linker, "\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
 #include "tray_app.h"
+#include "resource.h"
 #include "adl.h"
 #include <commctrl.h>
 #include <shlwapi.h>
@@ -219,24 +220,123 @@ void RegisterGlobalHotkey(HWND hwnd, const TraySettings& s) {
     }
 }
 
-// Convert Hotkey Control Modifiers to RegisterHotKey Modifiers
-UINT TranslateModifiersFromHK(BYTE hkMod) {
-    UINT rMod = 0;
-    if (hkMod & HOTKEYF_ALT)     rMod |= MOD_ALT;
-    if (hkMod & HOTKEYF_CONTROL) rMod |= MOD_CONTROL;
-    if (hkMod & HOTKEYF_SHIFT)   rMod |= MOD_SHIFT;
-    if (hkMod & HOTKEYF_EXT)     rMod |= MOD_WIN;
-    return rMod;
+// Structure to keep track of current recorded hotkey
+struct RecordedHotkey {
+    WORD vk = 0;
+    WORD mod = 0;
+};
+static RecordedHotkey g_recordedHotkey;
+
+// Helper to format hotkey combinations cleanly as text
+std::wstring FormatHotkeyString(WORD vk, WORD mod) {
+    if (vk == 0) return L"None";
+    std::wstring text = L"";
+    if (mod & MOD_CONTROL) text += L"Ctrl + ";
+    if (mod & MOD_SHIFT)   text += L"Shift + ";
+    if (mod & MOD_ALT)     text += L"Alt + ";
+    if (mod & MOD_WIN)     text += L"Win + ";
+
+    wchar_t keyName[64] = { 0 };
+    UINT scanCode = MapVirtualKeyW(vk, MAPVK_VK_TO_VSC);
+    
+    // Add extended key bit if necessary for correct display (arrows, navigation keys)
+    LONG lParamKey = (scanCode << 16);
+    if (vk >= VK_PRIOR && vk <= VK_HELP) lParamKey |= (1 << 24);
+    if (vk >= VK_INSERT && vk <= VK_DELETE) lParamKey |= (1 << 24);
+    
+    if (GetKeyNameTextW(lParamKey, keyName, 64) > 0) {
+        text += keyName;
+    } else {
+        if ((vk >= 'A' && vk <= 'Z') || (vk >= '0' && vk <= '9')) {
+            text += (wchar_t)vk;
+        } else {
+            text += L"Key " + std::to_wstring(vk);
+        }
+    }
+    return text;
 }
 
-// Convert RegisterHotKey Modifiers to Hotkey Control Modifiers
-BYTE TranslateModifiersToHK(UINT rMod) {
-    BYTE hkMod = 0;
-    if (rMod & MOD_ALT)     hkMod |= HOTKEYF_ALT;
-    if (rMod & MOD_CONTROL) hkMod |= HOTKEYF_CONTROL;
-    if (rMod & MOD_SHIFT)   hkMod |= HOTKEYF_SHIFT;
-    if (rMod & MOD_WIN)     hkMod |= HOTKEYF_EXT;
-    return hkMod;
+// Subclass window procedure for the hotkey edit control
+LRESULT CALLBACK HotkeyEditSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData) {
+    switch (uMsg) {
+    case WM_SETFOCUS:
+        HideCaret(hWnd);
+        break;
+
+    case WM_KILLFOCUS: {
+        std::wstring text = FormatHotkeyString(g_recordedHotkey.vk, g_recordedHotkey.mod);
+        SetWindowTextW(hWnd, text.c_str());
+        break;
+    }
+
+    case WM_KEYDOWN:
+    case WM_SYSKEYDOWN: {
+        bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+        bool alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
+        bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+        bool win = (GetKeyState(VK_LWIN) & 0x8000) != 0 || (GetKeyState(VK_RWIN) & 0x8000) != 0;
+
+        int vk = (int)wParam;
+
+        // Escape or Backspace clears the hotkey
+        if (vk == VK_ESCAPE || vk == VK_BACK) {
+            if (g_recordedHotkey.vk == 0 && vk == VK_ESCAPE) {
+                // If hotkey is already empty, let Escape close the settings dialog
+                PostMessageW(GetParent(hWnd), WM_COMMAND, MAKEWPARAM(ID_BTN_CANCEL, BN_CLICKED), (LPARAM)GetDlgItem(GetParent(hWnd), ID_BTN_CANCEL));
+            } else {
+                g_recordedHotkey.vk = 0;
+                g_recordedHotkey.mod = 0;
+                SetWindowTextW(hWnd, L"None");
+            }
+            return 0;
+        }
+
+        // If it's a modifier key itself, update the text to show the modifier combinations
+        if (vk == VK_CONTROL || vk == VK_SHIFT || vk == VK_MENU || vk == VK_LWIN || vk == VK_RWIN) {
+            std::wstring text = L"";
+            if (ctrl) text += L"Ctrl + ";
+            if (shift) text += L"Shift + ";
+            if (alt) text += L"Alt + ";
+            if (win) text += L"Win + ";
+            if (!text.empty()) {
+                text = text.substr(0, text.size() - 3);
+            } else {
+                text = L"None";
+            }
+            SetWindowTextW(hWnd, text.c_str());
+            return 0;
+        }
+
+        // It's a valid non-modifier key. Record it!
+        WORD mod = 0;
+        if (ctrl) mod |= MOD_CONTROL;
+        if (alt)  mod |= MOD_ALT;
+        if (shift) mod |= MOD_SHIFT;
+        if (win)   mod |= MOD_WIN;
+
+        g_recordedHotkey.vk = (WORD)vk;
+        g_recordedHotkey.mod = mod;
+
+        std::wstring text = FormatHotkeyString(g_recordedHotkey.vk, g_recordedHotkey.mod);
+        SetWindowTextW(hWnd, text.c_str());
+        return 0;
+    }
+
+    case WM_KEYUP:
+    case WM_SYSKEYUP: {
+        int vk = (int)wParam;
+        // Eat keyup for modifiers to prevent them triggering system actions
+        if (vk == VK_LWIN || vk == VK_RWIN || vk == VK_MENU) {
+            return 0;
+        }
+        break;
+    }
+
+    case WM_CHAR:
+    case WM_SYSCHAR:
+        return 0;
+    }
+    return DefSubclassProc(hWnd, uMsg, wParam, lParam);
 }
 
 // DPI Awareness Helper Functions
@@ -269,7 +369,6 @@ HFONT CreateDpiFont(UINT dpi) {
 
 void UpdateLayout(HWND hWnd, UINT dpi) {
     HWND hGrpDisplay = GetDlgItem(hWnd, ID_GRP_DISPLAY);
-    HWND hLblDisplay = GetDlgItem(hWnd, ID_LBL_DISPLAY);
     HWND hCbDisplay = GetDlgItem(hWnd, ID_CB_DISPLAY);
     HWND hLblI2C = GetDlgItem(hWnd, ID_LBL_I2C);
     HWND hCbI2C = GetDlgItem(hWnd, ID_CB_I2C);
@@ -277,10 +376,7 @@ void UpdateLayout(HWND hWnd, UINT dpi) {
     HWND hGrpSwitch = GetDlgItem(hWnd, ID_GRP_SWITCH);
     HWND hLblInput = GetDlgItem(hWnd, ID_LBL_INPUT);
     HWND hCbInput = GetDlgItem(hWnd, ID_CB_INPUT);
-    HWND hLblCustom = GetDlgItem(hWnd, ID_LBL_CUSTOM);
-    HWND hTxtCustom = GetDlgItem(hWnd, ID_TXT_CUSTOM);
 
-    HWND hGrpHotkey = GetDlgItem(hWnd, ID_GRP_HOTKEY);
     HWND hLblHotkey = GetDlgItem(hWnd, ID_LBL_HOTKEY);
     HWND hHkHotkey = GetDlgItem(hWnd, ID_HK_HOTKEY);
 
@@ -288,25 +384,23 @@ void UpdateLayout(HWND hWnd, UINT dpi) {
     HWND hBtnSave = GetDlgItem(hWnd, ID_BTN_SAVE);
     HWND hBtnCancel = GetDlgItem(hWnd, ID_BTN_CANCEL);
 
-    if (hGrpDisplay) MoveWindow(hGrpDisplay, ScaleDpi(10, dpi), ScaleDpi(10, dpi), ScaleDpi(365, dpi), ScaleDpi(100, dpi), TRUE);
-    if (hLblDisplay) MoveWindow(hLblDisplay, ScaleDpi(20, dpi), ScaleDpi(30, dpi), ScaleDpi(100, dpi), ScaleDpi(18, dpi), TRUE);
-    if (hCbDisplay) MoveWindow(hCbDisplay, ScaleDpi(20, dpi), ScaleDpi(50, dpi), ScaleDpi(345, dpi), ScaleDpi(150, dpi), TRUE);
-    if (hLblI2C) MoveWindow(hLblI2C, ScaleDpi(20, dpi), ScaleDpi(80, dpi), ScaleDpi(120, dpi), ScaleDpi(18, dpi), TRUE);
-    if (hCbI2C) MoveWindow(hCbI2C, ScaleDpi(150, dpi), ScaleDpi(77, dpi), ScaleDpi(100, dpi), ScaleDpi(100, dpi), TRUE);
+    // GroupBox 1 (Display Configuration)
+    if (hGrpDisplay) MoveWindow(hGrpDisplay, ScaleDpi(10, dpi), ScaleDpi(10, dpi), ScaleDpi(365, dpi), ScaleDpi(90, dpi), TRUE);
+    if (hCbDisplay) MoveWindow(hCbDisplay, ScaleDpi(20, dpi), ScaleDpi(30, dpi), ScaleDpi(345, dpi), ScaleDpi(150, dpi), TRUE);
+    if (hLblI2C) MoveWindow(hLblI2C, ScaleDpi(20, dpi), ScaleDpi(60, dpi), ScaleDpi(95, dpi), ScaleDpi(18, dpi), TRUE);
+    if (hCbI2C) MoveWindow(hCbI2C, ScaleDpi(120, dpi), ScaleDpi(57, dpi), ScaleDpi(100, dpi), ScaleDpi(100, dpi), TRUE);
 
-    if (hGrpSwitch) MoveWindow(hGrpSwitch, ScaleDpi(10, dpi), ScaleDpi(120, dpi), ScaleDpi(365, dpi), ScaleDpi(105, dpi), TRUE);
-    if (hLblInput) MoveWindow(hLblInput, ScaleDpi(20, dpi), ScaleDpi(140, dpi), ScaleDpi(100, dpi), ScaleDpi(18, dpi), TRUE);
-    if (hCbInput) MoveWindow(hCbInput, ScaleDpi(20, dpi), ScaleDpi(160, dpi), ScaleDpi(345, dpi), ScaleDpi(150, dpi), TRUE);
-    if (hLblCustom) MoveWindow(hLblCustom, ScaleDpi(20, dpi), ScaleDpi(193, dpi), ScaleDpi(120, dpi), ScaleDpi(18, dpi), TRUE);
-    if (hTxtCustom) MoveWindow(hTxtCustom, ScaleDpi(150, dpi), ScaleDpi(190, dpi), ScaleDpi(100, dpi), ScaleDpi(20, dpi), TRUE);
+    // GroupBox 2 (Switch Configuration)
+    if (hGrpSwitch) MoveWindow(hGrpSwitch, ScaleDpi(10, dpi), ScaleDpi(110, dpi), ScaleDpi(365, dpi), ScaleDpi(95, dpi), TRUE);
+    if (hLblInput) MoveWindow(hLblInput, ScaleDpi(20, dpi), ScaleDpi(130, dpi), ScaleDpi(95, dpi), ScaleDpi(18, dpi), TRUE);
+    if (hCbInput) MoveWindow(hCbInput, ScaleDpi(120, dpi), ScaleDpi(127, dpi), ScaleDpi(245, dpi), ScaleDpi(150, dpi), TRUE);
+    if (hLblHotkey) MoveWindow(hLblHotkey, ScaleDpi(20, dpi), ScaleDpi(165, dpi), ScaleDpi(95, dpi), ScaleDpi(18, dpi), TRUE);
+    if (hHkHotkey) MoveWindow(hHkHotkey, ScaleDpi(120, dpi), ScaleDpi(162, dpi), ScaleDpi(245, dpi), ScaleDpi(22, dpi), TRUE);
 
-    if (hGrpHotkey) MoveWindow(hGrpHotkey, ScaleDpi(10, dpi), ScaleDpi(235, dpi), ScaleDpi(365, dpi), ScaleDpi(70, dpi), TRUE);
-    if (hLblHotkey) MoveWindow(hLblHotkey, ScaleDpi(20, dpi), ScaleDpi(252, dpi), ScaleDpi(340, dpi), ScaleDpi(18, dpi), TRUE);
-    if (hHkHotkey) MoveWindow(hHkHotkey, ScaleDpi(20, dpi), ScaleDpi(272, dpi), ScaleDpi(345, dpi), ScaleDpi(22, dpi), TRUE);
-
-    if (hBtnTest) MoveWindow(hBtnTest, ScaleDpi(10, dpi), ScaleDpi(320, dpi), ScaleDpi(100, dpi), ScaleDpi(26, dpi), TRUE);
-    if (hBtnSave) MoveWindow(hBtnSave, ScaleDpi(175, dpi), ScaleDpi(320, dpi), ScaleDpi(95, dpi), ScaleDpi(26, dpi), TRUE);
-    if (hBtnCancel) MoveWindow(hBtnCancel, ScaleDpi(280, dpi), ScaleDpi(320, dpi), ScaleDpi(95, dpi), ScaleDpi(26, dpi), TRUE);
+    // Action Buttons
+    if (hBtnTest) MoveWindow(hBtnTest, ScaleDpi(10, dpi), ScaleDpi(215, dpi), ScaleDpi(100, dpi), ScaleDpi(26, dpi), TRUE);
+    if (hBtnSave) MoveWindow(hBtnSave, ScaleDpi(175, dpi), ScaleDpi(215, dpi), ScaleDpi(95, dpi), ScaleDpi(26, dpi), TRUE);
+    if (hBtnCancel) MoveWindow(hBtnCancel, ScaleDpi(280, dpi), ScaleDpi(215, dpi), ScaleDpi(95, dpi), ScaleDpi(26, dpi), TRUE);
 }
 
 // Settings Dialog / Window Procedure
@@ -314,46 +408,34 @@ LRESULT CALLBACK SettingsWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM 
     switch (message) {
     case WM_CREATE: {
         // Target Display Group
-        HWND hGrpDisplay = CreateWindowExW(0, L"BUTTON", L"Target Display", WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
+        HWND hGrpDisplay = CreateWindowExW(0, L"BUTTON", L"Display Configuration", WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
             0, 0, 0, 0, hWnd, (HMENU)ID_GRP_DISPLAY, NULL, NULL);
-
-        CreateWindowExW(0, L"STATIC", L"Select Display:", WS_CHILD | WS_VISIBLE | SS_LEFT,
-            0, 0, 0, 0, hWnd, (HMENU)ID_LBL_DISPLAY, NULL, NULL);
 
         HWND hCbDisplay = CreateWindowExW(0, L"COMBOBOX", NULL, WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP,
             0, 0, 0, 0, hWnd, (HMENU)ID_CB_DISPLAY, NULL, NULL);
 
-        CreateWindowExW(0, L"STATIC", L"I2C Source Address:", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        CreateWindowExW(0, L"STATIC", L"I2C Address:", WS_CHILD | WS_VISIBLE | SS_LEFT,
             0, 0, 0, 0, hWnd, (HMENU)ID_LBL_I2C, NULL, NULL);
 
         HWND hCbI2C = CreateWindowExW(0, L"COMBOBOX", NULL, WS_CHILD | WS_VISIBLE | CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP,
             0, 0, 0, 0, hWnd, (HMENU)ID_CB_I2C, NULL, NULL);
 
         // Switch Command Group
-        CreateWindowExW(0, L"BUTTON", L"Switch Command", WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
+        CreateWindowExW(0, L"BUTTON", L"Switch Configuration", WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
             0, 0, 0, 0, hWnd, (HMENU)ID_GRP_SWITCH, NULL, NULL);
 
         CreateWindowExW(0, L"STATIC", L"Target Input:", WS_CHILD | WS_VISIBLE | SS_LEFT,
             0, 0, 0, 0, hWnd, (HMENU)ID_LBL_INPUT, NULL, NULL);
 
-        HWND hCbInput = CreateWindowExW(0, L"COMBOBOX", NULL, WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP,
+        HWND hCbInput = CreateWindowExW(0, L"COMBOBOX", NULL, WS_CHILD | WS_VISIBLE | CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP,
             0, 0, 0, 0, hWnd, (HMENU)ID_CB_INPUT, NULL, NULL);
 
-        HWND hLblCustom = CreateWindowExW(0, L"STATIC", L"Custom Value (Hex):", WS_CHILD | WS_VISIBLE | SS_LEFT,
-            0, 0, 0, 0, hWnd, (HMENU)ID_LBL_CUSTOM, NULL, NULL);
-
-        HWND hTxtCustom = CreateWindowExW(0, L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL | WS_TABSTOP,
-            0, 0, 0, 0, hWnd, (HMENU)ID_TXT_CUSTOM, NULL, NULL);
-
-        // Global Hotkey Group
-        CreateWindowExW(0, L"BUTTON", L"Global Hotkey", WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
-            0, 0, 0, 0, hWnd, (HMENU)ID_GRP_HOTKEY, NULL, NULL);
-
-        CreateWindowExW(0, L"STATIC", L"Record hotkey to trigger input switch:", WS_CHILD | WS_VISIBLE | SS_LEFT,
+        CreateWindowExW(0, L"STATIC", L"Global Hotkey:", WS_CHILD | WS_VISIBLE | SS_LEFT,
             0, 0, 0, 0, hWnd, (HMENU)ID_LBL_HOTKEY, NULL, NULL);
 
-        HWND hHkHotkey = CreateWindowExW(0, HOTKEY_CLASS, NULL, WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP,
+        HWND hHkHotkey = CreateWindowExW(0, L"EDIT", NULL, WS_CHILD | WS_VISIBLE | WS_BORDER | ES_READONLY | ES_CENTER | WS_TABSTOP,
             0, 0, 0, 0, hWnd, (HMENU)ID_HK_HOTKEY, NULL, NULL);
+        SetWindowSubclass(hHkHotkey, HotkeyEditSubclassProc, ID_HK_HOTKEY, 0);
 
         // Action Buttons
         CreateWindowExW(0, L"BUTTON", L"Test Switch", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP,
@@ -407,52 +489,31 @@ LRESULT CALLBACK SettingsWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM 
         SendMessageW(hCbInput, CB_ADDSTRING, 0, (LPARAM)L"0xD1 (USB-C / DP2)");
         SendMessageW(hCbInput, CB_ADDSTRING, 0, (LPARAM)L"0x90 (HDMI1)");
         SendMessageW(hCbInput, CB_ADDSTRING, 0, (LPARAM)L"0x91 (HDMI2)");
-        SendMessageW(hCbInput, CB_ADDSTRING, 0, (LPARAM)L"Custom Input (Hex)...");
 
-        int inputSelect = 4; // Default to custom
+        int inputSelect = -1;
         if (g_settings.input_value == 0xD0) inputSelect = 0;
         else if (g_settings.input_value == 0xD1) inputSelect = 1;
         else if (g_settings.input_value == 0x90) inputSelect = 2;
         else if (g_settings.input_value == 0x91) inputSelect = 3;
 
-        SendMessageW(hCbInput, CB_SETCURSEL, inputSelect, 0);
-
-        if (inputSelect == 4) {
+        if (inputSelect != -1) {
+            SendMessageW(hCbInput, CB_SETCURSEL, inputSelect, 0);
+        } else {
             wchar_t valStr[16];
             swprintf_s(valStr, L"0x%X", g_settings.input_value);
-            SetWindowTextW(hTxtCustom, valStr);
-            EnableWindow(hTxtCustom, TRUE);
-            EnableWindow(hLblCustom, TRUE);
-        } else {
-            EnableWindow(hTxtCustom, FALSE);
-            EnableWindow(hLblCustom, FALSE);
+            SetWindowTextW(hCbInput, valStr);
         }
 
         // Setup Hotkey Control
-        if (g_settings.hotkey_vk != 0) {
-            BYTE hkMod = TranslateModifiersToHK(g_settings.hotkey_mod);
-            SendMessageW(hHkHotkey, HKM_SETHOTKEY, MAKEWORD(g_settings.hotkey_vk, hkMod), 0);
-        }
+        g_recordedHotkey.vk = g_settings.hotkey_vk;
+        g_recordedHotkey.mod = g_settings.hotkey_mod;
+        std::wstring hkText = FormatHotkeyString(g_recordedHotkey.vk, g_recordedHotkey.mod);
+        SetWindowTextW(hHkHotkey, hkText.c_str());
 
         break;
     }
 
     case WM_COMMAND: {
-        HWND hTxtCustom = GetDlgItem(hWnd, ID_TXT_CUSTOM);
-        HWND hLblCustom = GetDlgItem(hWnd, ID_LBL_CUSTOM);
-
-        if (LOWORD(wParam) == ID_CB_INPUT && HIWORD(wParam) == CBN_SELCHANGE) {
-            HWND hCbInput = (HWND)lParam;
-            int sel = (int)SendMessageW(hCbInput, CB_GETCURSEL, 0, 0);
-            if (sel == 4) { // Custom
-                EnableWindow(hTxtCustom, TRUE);
-                EnableWindow(hLblCustom, TRUE);
-            } else {
-                EnableWindow(hTxtCustom, FALSE);
-                EnableWindow(hLblCustom, FALSE);
-            }
-        }
-
         // Test Switch action
         if (LOWORD(wParam) == ID_BTN_TEST) {
             // Read inputs temporarily and trigger
@@ -470,17 +531,9 @@ LRESULT CALLBACK SettingsWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM 
                 GetWindowTextW(hCbI2C, i2cBuf, 32);
                 unsigned int i2cAddr = wcstoul(i2cBuf, nullptr, 16);
 
-                unsigned int inputVal = 0xD1;
-                int inputSel = (int)SendMessageW(hCbInput, CB_GETCURSEL, 0, 0);
-                if (inputSel == 0) inputVal = 0xD0;
-                else if (inputSel == 1) inputVal = 0xD1;
-                else if (inputSel == 2) inputVal = 0x90;
-                else if (inputSel == 3) inputVal = 0x91;
-                else {
-                    wchar_t valBuf[32];
-                    GetWindowTextW(hTxtCustom, valBuf, 32);
-                    inputVal = wcstoul(valBuf, nullptr, 16);
-                }
+                wchar_t valBuf[64];
+                GetWindowTextW(hCbInput, valBuf, 64);
+                unsigned int inputVal = wcstoul(valBuf, nullptr, 16);
 
                 ExecuteSwitchAsync(i2cAddr, inputVal, adapterIdx, displayIdx);
             }
@@ -509,20 +562,12 @@ LRESULT CALLBACK SettingsWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM 
             GetWindowTextW(hCbI2C, i2cBuf, 32);
             g_settings.i2c_subaddress = wcstoul(i2cBuf, nullptr, 16);
 
-            int inputSel = (int)SendMessageW(hCbInput, CB_GETCURSEL, 0, 0);
-            if (inputSel == 0) g_settings.input_value = 0xD0;
-            else if (inputSel == 1) g_settings.input_value = 0xD1;
-            else if (inputSel == 2) g_settings.input_value = 0x90;
-            else if (inputSel == 3) g_settings.input_value = 0x91;
-            else {
-                wchar_t valBuf[32];
-                GetWindowTextW(hTxtCustom, valBuf, 32);
-                g_settings.input_value = wcstoul(valBuf, nullptr, 16);
-            }
+            wchar_t valBuf[64];
+            GetWindowTextW(hCbInput, valBuf, 64);
+            g_settings.input_value = wcstoul(valBuf, nullptr, 16);
 
-            WORD hk = (WORD)SendMessageW(hHkHotkey, HKM_GETHOTKEY, 0, 0);
-            g_settings.hotkey_vk = LOBYTE(hk);
-            g_settings.hotkey_mod = TranslateModifiersFromHK(HIBYTE(hk));
+            g_settings.hotkey_vk = g_recordedHotkey.vk;
+            g_settings.hotkey_mod = g_recordedHotkey.mod;
 
             // Save to settings.ini
             SaveTraySettings(g_settings);
@@ -563,6 +608,12 @@ LRESULT CALLBACK SettingsWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM 
     }
 
     case WM_CTLCOLORSTATIC: {
+        HWND hwndChild = (HWND)lParam;
+        if (GetDlgCtrlID(hwndChild) == ID_HK_HOTKEY) {
+            HDC hdc = (HDC)wParam;
+            SetBkColor(hdc, GetSysColor(COLOR_WINDOW));
+            return (LRESULT)GetSysColorBrush(COLOR_WINDOW);
+        }
         HDC hdc = (HDC)wParam;
         SetBkMode(hdc, TRANSPARENT);
         return (LRESULT)GetStockObject(NULL_BRUSH);
@@ -598,20 +649,23 @@ void ShowSettingsDialog(HWND hParentWnd, HINSTANCE hInst) {
     static bool classRegistered = false;
 
     if (!classRegistered) {
-        WNDCLASSW wc = {};
-        wc.lpfnWndProc = SettingsWndProc;
-        wc.hInstance = hInst;
-        wc.lpszClassName = CLASS_NAME;
-        wc.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1);
-        wc.hCursor = LoadCursorW(NULL, (LPCWSTR)IDC_ARROW);
-        RegisterClassW(&wc);
+        WNDCLASSEXW wcex = {};
+        wcex.cbSize = sizeof(WNDCLASSEXW);
+        wcex.lpfnWndProc = SettingsWndProc;
+        wcex.hInstance = hInst;
+        wcex.lpszClassName = CLASS_NAME;
+        wcex.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1);
+        wcex.hCursor = LoadCursorW(NULL, (LPCWSTR)IDC_ARROW);
+        wcex.hIcon = (HICON)LoadImageW(hInst, MAKEINTRESOURCE(IDI_APP_ICON), IMAGE_ICON, GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON), LR_DEFAULTCOLOR);
+        wcex.hIconSm = (HICON)LoadImageW(hInst, MAKEINTRESOURCE(IDI_APP_ICON), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR);
+        RegisterClassExW(&wcex);
         classRegistered = true;
     }
 
     // Scale initial window size based on system DPI
     UINT dpi = GetWindowDpi(GetDesktopWindow());
     int w = ScaleDpi(400, dpi);
-    int h = ScaleDpi(400, dpi);
+    int h = ScaleDpi(290, dpi);
 
     int screenWidth = GetSystemMetrics(SM_CXSCREEN);
     int screenHeight = GetSystemMetrics(SM_CYSCREEN);
@@ -750,8 +804,8 @@ int RunTrayApp(HINSTANCE hInstance) {
     nid.uID = TRAY_ICON_ID;
     nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     nid.uCallbackMessage = WM_TRAYICON;
-    // Load standard application icon
-    nid.hIcon = LoadIconW(NULL, (LPCWSTR)IDI_APPLICATION);
+    // Load custom application icon from resources (specifically requested 16x16 size for the tray)
+    nid.hIcon = (HICON)LoadImageW(hInstance, MAKEINTRESOURCE(IDI_APP_ICON), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR);
     wcscpy_s(nid.szTip, L"AMD DDC Input Switcher");
 
     Shell_NotifyIconW(NIM_ADD, &nid);
