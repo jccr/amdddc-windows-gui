@@ -13,6 +13,7 @@
 
 #pragma comment(lib, "comctl32.lib")
 #pragma comment(lib, "shlwapi.lib")
+#pragma comment(lib, "advapi32.lib")
 
 #define WM_TRAYICON (WM_USER + 1)
 #define TRAY_ICON_ID 1
@@ -689,6 +690,62 @@ void ShowSettingsDialog(HWND hParentWnd, HINSTANCE hInst) {
     SetForegroundWindow(g_hSettingsWnd);
 }
 
+enum PreferredAppMode {
+    Default,
+    AllowDark,
+    ForceDark,
+    ForceLight,
+    Max
+};
+
+using SetPreferredAppModeProc = PreferredAppMode(WINAPI*)(PreferredAppMode);
+using FlushMenuThemesProc = void(WINAPI*)();
+using RefreshImmersiveColorPolicyStateProc = void(WINAPI*)();
+using AllowDarkModeForWindowProc = bool(WINAPI*)(HWND, bool);
+
+bool IsWindowsDarkModeActive() {
+    HKEY hKey;
+    DWORD value = 1; // Default to Light Mode
+    DWORD size = sizeof(value);
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        RegQueryValueExW(hKey, L"AppsUseLightTheme", nullptr, nullptr, reinterpret_cast<LPBYTE>(&value), &size);
+        RegCloseKey(hKey);
+    }
+    return value == 0;
+}
+
+void ApplyThemePreference() {
+    bool isDarkMode = IsWindowsDarkModeActive();
+    HMODULE hUxTheme = LoadLibraryExW(L"uxtheme.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (hUxTheme) {
+        auto pSetPreferredAppMode = reinterpret_cast<SetPreferredAppModeProc>(GetProcAddress(hUxTheme, MAKEINTRESOURCEA(135)));
+        auto pRefreshImmersiveColorPolicyState = reinterpret_cast<RefreshImmersiveColorPolicyStateProc>(GetProcAddress(hUxTheme, MAKEINTRESOURCEA(104)));
+        auto pFlushMenuThemes = reinterpret_cast<FlushMenuThemesProc>(GetProcAddress(hUxTheme, MAKEINTRESOURCEA(136)));
+        if (pSetPreferredAppMode) {
+            pSetPreferredAppMode(isDarkMode ? ForceDark : ForceLight);
+            // SetPreferredAppMode only updates an internal preference; the immersive
+            // color policy (which menu theming reads) must be refreshed for it to take
+            // effect, then the cached menu themes flushed.
+            if (pRefreshImmersiveColorPolicyState) pRefreshImmersiveColorPolicyState();
+            if (pFlushMenuThemes) pFlushMenuThemes();
+        }
+        FreeLibrary(hUxTheme);
+    }
+}
+
+// Opt a specific window into dark mode. Used for the window that owns popup menus
+// so that menus tracked from it pick up the dark theme.
+void AllowDarkModeForWindow(HWND hWnd) {
+    HMODULE hUxTheme = LoadLibraryExW(L"uxtheme.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (hUxTheme) {
+        auto pAllowDarkModeForWindow = reinterpret_cast<AllowDarkModeForWindowProc>(GetProcAddress(hUxTheme, MAKEINTRESOURCEA(133)));
+        if (pAllowDarkModeForWindow) {
+            pAllowDarkModeForWindow(hWnd, IsWindowsDarkModeActive());
+        }
+        FreeLibrary(hUxTheme);
+    }
+}
+
 // Hidden Listener Window Procedure
 LRESULT CALLBACK HiddenWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
     static HINSTANCE hInst = NULL;
@@ -697,6 +754,13 @@ LRESULT CALLBACK HiddenWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lP
     case WM_CREATE: {
         CREATESTRUCT* pcs = (CREATESTRUCT*)lParam;
         hInst = pcs->hInstance;
+        break;
+    }
+
+    case WM_SETTINGCHANGE: {
+        if (lParam == 0 || wcscmp(reinterpret_cast<LPCWSTR>(lParam), L"ImmersiveColorSet") == 0) {
+            ApplyThemePreference();
+        }
         break;
     }
 
@@ -818,6 +882,9 @@ int RunTrayApp(HINSTANCE hInstance) {
         return 1;
     }
 
+    // Apply initial Dark/Light theme mode preference
+    ApplyThemePreference();
+
     // Load Settings
     g_settings = LoadTraySettings();
 
@@ -829,13 +896,14 @@ int RunTrayApp(HINSTANCE hInstance) {
     wc.lpszClassName = CLASS_NAME;
     RegisterClassW(&wc);
 
+    // Create a hidden top-level window so it can receive system-wide broadcasts (e.g. WM_SETTINGCHANGE)
     g_hHiddenWnd = CreateWindowExW(
-        0,
+        WS_EX_TOOLWINDOW,
         CLASS_NAME,
         L"AMD DDC Monitor Switcher Listener",
-        0,
+        WS_POPUP,
         CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
-        HWND_MESSAGE, // Hidden Message-only window
+        NULL, // No parent (top-level)
         NULL,
         hInstance,
         NULL
@@ -845,6 +913,9 @@ int RunTrayApp(HINSTANCE hInstance) {
         FreeADL();
         return 1;
     }
+
+    // Opt the menu owner window into dark mode so tray popup menus render dark.
+    AllowDarkModeForWindow(g_hHiddenWnd);
 
     // Setup System Tray Icon
     NOTIFYICONDATAW nid = {};
