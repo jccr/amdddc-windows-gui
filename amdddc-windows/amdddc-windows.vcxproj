@@ -135,7 +135,6 @@
     <ClCompile Include="display_enum.cpp" />
     <ClCompile Include="dpi.cpp" />
     <ClCompile Include="hotkey.cpp" />
-    <ClCompile Include="settings.cpp" />
     <ClCompile Include="settings_dialog.cpp" />
     <ClCompile Include="switch_input.cpp" />
     <ClCompile Include="tray_app.cpp" />
@@ -154,7 +153,6 @@
     <ClInclude Include="display_enum.h" />
     <ClInclude Include="dpi.h" />
     <ClInclude Include="hotkey.h" />
-    <ClInclude Include="settings.h" />
     <ClInclude Include="settings_dialog.h" />
     <ClInclude Include="switch_input.h" />
     <ClInclude Include="tray_app.h" />

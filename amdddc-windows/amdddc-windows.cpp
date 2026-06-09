@@ -1,11 +1,5 @@
-#include "settings.h"
 #include "adl.h"
 #include "tray_app.h"
-#include <iostream>
-#include <io.h>
-#include <fcntl.h>
-
-using namespace std;
 
 #pragma region setvcp command
 #define SETWRITESIZE 8
@@ -64,58 +58,6 @@ void vSetVcpCommand(unsigned int subaddress, unsigned char ucVcp, unsigned int u
     ucSetCommandWrite[SET_CHK_OFFSET] = chk;
     ADL_Err = vWriteI2c((char*)&ucSetCommandWrite[0], SETWRITESIZE, iAdapterIndex, iDisplayIndex);
     Sleep(5000);
-}
-#pragma endregion
-
-#pragma region detect commnad
-
-void print_devices() {
-    int iNumberAdapters = 0;
-    int iAdapterIndex = 0;
-    int iNumberDisplays = 0;
-	int iDisplayIndex = 0;
-    int ADL_Err = ADL_ERR;
-
-    adlprocs.ADL_Adapter_NumberOfAdapters_Get(&iNumberAdapters);
-
-    if (iNumberAdapters <= 0)
-    {
-        cerr << "No AMD display devices found!" << endl;
-        return;
-    }
-
-    lpAdapterInfo = (LPAdapterInfo)malloc(sizeof(AdapterInfo) * iNumberAdapters);
-    memset(lpAdapterInfo, '\0', sizeof(AdapterInfo) * iNumberAdapters);
-
-    // Get the AdapterInfo structure for all adapters in the system
-    adlprocs.ADL_Adapter_AdapterInfo_Get(lpAdapterInfo, sizeof(AdapterInfo) * iNumberAdapters);
-
-    // Repeat for all available adapters in the system
-    for (int i = 0; i < iNumberAdapters; i++) {
-        iAdapterIndex = lpAdapterInfo[i].iAdapterIndex;
-        ADL_Main_Memory_Free((void**)&lpAdlDisplayInfo);
-
-        ADL_Err = adlprocs.ADL_Display_DisplayInfo_Get(lpAdapterInfo[i].iAdapterIndex, &iNumberDisplays, &lpAdlDisplayInfo, 0);
-
-        cout << "Adapter Index: " << iAdapterIndex << " Adapter Name: " << lpAdapterInfo[i].strAdapterName << endl;
-
-        for (int j = 0; j < iNumberDisplays; j++)
-        {
-            // For each display, check its status. Use the display only if it's connected AND mapped (iDisplayInfoValue: bit 0 and 1 )
-            if ((ADL_DISPLAY_DISPLAYINFO_DISPLAYCONNECTED | ADL_DISPLAY_DISPLAYINFO_DISPLAYMAPPED) !=
-                (ADL_DISPLAY_DISPLAYINFO_DISPLAYCONNECTED | ADL_DISPLAY_DISPLAYINFO_DISPLAYMAPPED & lpAdlDisplayInfo[j].iDisplayInfoValue))
-                continue;   // Skip the not connected or non-active displays
-
-            // Is the display mapped to this adapter?
-            if ( iAdapterIndex != lpAdlDisplayInfo[ j ].displayID.iDisplayLogicalAdapterIndex )
-                continue;
-
-            // Preserve the Connected displays in PDL style :-)
-            iDisplayIndex = lpAdlDisplayInfo[j].displayID.iDisplayLogicalIndex;
-
-            cout << "\tDisplay Index : " << iDisplayIndex << " Display Name : " << lpAdlDisplayInfo[j].strDisplayName << endl;
-        }
-    }
 }
 #pragma endregion
 

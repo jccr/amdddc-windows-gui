@@ -1,38 +1,23 @@
 #include "display_enum.h"
 #include "adl.h"
 #include <windows.h>
-#include <cstdio>
 
 // Enumerate connected and active displays from ADL SDK
 std::vector<DetectedDisplay> EnumerateDisplays() {
     std::vector<DetectedDisplay> list;
-    FILE* dbg = nullptr;
-    fopen_s(&dbg, "C:\\Users\\jccr\\Projects\\AMDLG-InputSwitch\\tray_debug.log", "w");
-    if (dbg) {
-        fprintf(dbg, "EnumerateDisplays called\n");
-    }
 
     int iNumberAdapters = 0;
     if (!InitADL()) {
-        if (dbg) {
-            fprintf(dbg, "InitADL failed\n");
-            fclose(dbg);
-        }
         return list;
     }
 
     adlprocs.ADL_Adapter_NumberOfAdapters_Get(&iNumberAdapters);
-    if (dbg) {
-        fprintf(dbg, "iNumberAdapters: %d\n", iNumberAdapters);
-    }
     if (iNumberAdapters <= 0) {
-        if (dbg) fclose(dbg);
         return list;
     }
 
     LPAdapterInfo lpInfo = (LPAdapterInfo)malloc(sizeof(AdapterInfo) * iNumberAdapters);
     if (!lpInfo) {
-        if (dbg) fclose(dbg);
         return list;
     }
     memset(lpInfo, '\0', sizeof(AdapterInfo) * iNumberAdapters);
@@ -44,21 +29,9 @@ std::vector<DetectedDisplay> EnumerateDisplays() {
         LPADLDisplayInfo lpDisp = nullptr;
 
         int ADL_Err = adlprocs.ADL_Display_DisplayInfo_Get(iAdapterIndex, &iNumberDisplays, &lpDisp, 0);
-        if (dbg) {
-            fprintf(dbg, "Adapter %d (Index: %d) Name: %s, ADL_Err: %d, iNumberDisplays: %d\n",
-                i, iAdapterIndex, lpInfo[i].strAdapterName, ADL_Err, iNumberDisplays);
-        }
 
         if (ADL_OK == ADL_Err && lpDisp != nullptr) {
             for (int j = 0; j < iNumberDisplays; j++) {
-                if (dbg) {
-                    fprintf(dbg, "  Display %d: Name: %s, LogicalAdapterIndex: %d, LogicalIndex: %d, InfoValue: %d\n",
-                        j, lpDisp[j].strDisplayName,
-                        lpDisp[j].displayID.iDisplayLogicalAdapterIndex,
-                        lpDisp[j].displayID.iDisplayLogicalIndex,
-                        lpDisp[j].iDisplayInfoValue);
-                }
-
                 // Connected and active check (matching original CLI mapping-only filter)
                 if (lpDisp[j].iDisplayInfoValue & ADL_DISPLAY_DISPLAYINFO_DISPLAYMAPPED) {
                     if (iAdapterIndex == lpDisp[j].displayID.iDisplayLogicalAdapterIndex) {
@@ -80,9 +53,6 @@ std::vector<DetectedDisplay> EnumerateDisplays() {
                         dd.adapter_name = wAdapterName;
                         dd.display_name = wDisplayName;
                         list.push_back(dd);
-                        if (dbg) {
-                            fprintf(dbg, "    -> Display added successfully!\n");
-                        }
                     }
                 }
             }
@@ -90,9 +60,5 @@ std::vector<DetectedDisplay> EnumerateDisplays() {
         }
     }
     free(lpInfo);
-    if (dbg) {
-        fprintf(dbg, "EnumerateDisplays finished, returning %zu displays\n", list.size());
-        fclose(dbg);
-    }
     return list;
 }
