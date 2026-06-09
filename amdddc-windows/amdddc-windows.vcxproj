@@ -131,8 +131,15 @@
   <ItemGroup>
     <ClCompile Include="adl.cpp" />
     <ClCompile Include="amdddc-windows.cpp" />
+    <ClCompile Include="dark_mode.cpp" />
+    <ClCompile Include="display_enum.cpp" />
+    <ClCompile Include="dpi.cpp" />
+    <ClCompile Include="hotkey.cpp" />
     <ClCompile Include="settings.cpp" />
+    <ClCompile Include="settings_dialog.cpp" />
+    <ClCompile Include="switch_input.cpp" />
     <ClCompile Include="tray_app.cpp" />
+    <ClCompile Include="tray_settings.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include=".gitignore" />
@@ -143,8 +150,15 @@
   <ItemGroup>
     <ClInclude Include="resource.h" />
     <ClInclude Include="adl.h" />
+    <ClInclude Include="dark_mode.h" />
+    <ClInclude Include="display_enum.h" />
+    <ClInclude Include="dpi.h" />
+    <ClInclude Include="hotkey.h" />
     <ClInclude Include="settings.h" />
+    <ClInclude Include="settings_dialog.h" />
+    <ClInclude Include="switch_input.h" />
     <ClInclude Include="tray_app.h" />
+    <ClInclude Include="tray_settings.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
