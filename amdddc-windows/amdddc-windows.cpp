@@ -1,6 +1,9 @@
 #include "settings.h"
 #include "adl.h"
+#include "tray_app.h"
 #include <iostream>
+#include <io.h>
+#include <fcntl.h>
 
 using namespace std;
 
@@ -116,35 +119,7 @@ void print_devices() {
 }
 #pragma endregion
 
-int main(int argc, const char* argv[])
+int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nCmdShow)
 {
-    if (!InitADL())
-        exit(1);
-
-    Settings settings;
-
-    try {
-        settings = parse_settings(argc, argv);
-    }
-    catch (const runtime_error& e) {
-        cerr << "Error: " << e.what() << endl << endl;
-        print_help();
-        return 1;
-    }
-
-    if (settings.help) {
-        print_help();
-        return 0;
-    }
-
-    switch (settings.command) {
-    case detect:
-        print_devices();
-        break;
-    case setvcp:
-        vSetVcpCommand(settings.i2c_subaddress, VCP_CODE_SWITCH_INPUT, settings.input, settings.monitor, settings.display);
-        break;
-    default:
-        print_help();
-    }
+    return RunTrayApp(hInstance);
 }

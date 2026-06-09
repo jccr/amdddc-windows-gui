@@ -25,6 +25,9 @@ void __stdcall ADL_Main_Memory_Free(void** lpBuffer)
 
 bool InitADL()
 {
+    if (adlprocs.hModule)
+        return true;
+
     int	ADL_Err = ADL_ERR;
     if (!adlprocs.hModule)
     {
