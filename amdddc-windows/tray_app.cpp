@@ -705,7 +705,49 @@ LRESULT CALLBACK HiddenWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lP
             POINT pt;
             GetCursorPos(&pt);
             HMENU hMenu = CreatePopupMenu();
-            AppendMenuW(hMenu, MF_STRING, 1001, L"Switch Input Now");
+
+            struct MenuItemInput {
+                UINT id;
+                unsigned int value;
+                std::wstring name;
+            };
+
+            std::vector<MenuItemInput> menuInputs = {
+                { 1100, 0xD0, L"DP1" },
+                { 1101, 0xD1, L"USB-C" },
+                { 1102, 0x90, L"HDMI1" },
+                { 1103, 0x91, L"HDMI2" }
+            };
+
+            // Check if current input_value is custom
+            bool isCustom = true;
+            for (const auto& item : menuInputs) {
+                if (item.value == g_settings.input_value) {
+                    isCustom = false;
+                    break;
+                }
+            }
+
+            if (isCustom) {
+                wchar_t buf[16];
+                swprintf_s(buf, L"0x%X", g_settings.input_value);
+                menuInputs.push_back({ 1104, g_settings.input_value, buf });
+            }
+
+            for (const auto& item : menuInputs) {
+                std::wstring text = item.name;
+                UINT flags = MF_STRING;
+                if (item.value == g_settings.input_value) {
+                    if (g_settings.hotkey_vk != 0) {
+                        std::wstring hkText = FormatHotkeyString(g_settings.hotkey_vk, g_settings.hotkey_mod);
+                        if (!hkText.empty()) {
+                            text += L"\t" + hkText;
+                        }
+                    }
+                }
+                AppendMenuW(hMenu, flags, item.id, text.c_str());
+            }
+
             AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
             AppendMenuW(hMenu, MF_STRING, 1002, L"Settings...");
             AppendMenuW(hMenu, MF_STRING, 1003, L"Exit");
@@ -714,8 +756,15 @@ LRESULT CALLBACK HiddenWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lP
             int trackResult = TrackPopupMenu(hMenu, TPM_RETURNCMD | TPM_NONOTIFY, pt.x, pt.y, 0, hWnd, NULL);
             DestroyMenu(hMenu);
 
-            if (trackResult == 1001) {
-                ExecuteSwitchAsync(g_settings.i2c_subaddress, g_settings.input_value, g_settings.adapter_index, g_settings.display_index);
+            if (trackResult >= 1100 && trackResult <= 1104) {
+                unsigned int targetVal = 0;
+                for (const auto& item : menuInputs) {
+                    if (item.id == (UINT)trackResult) {
+                        targetVal = item.value;
+                        break;
+                    }
+                }
+                ExecuteSwitchAsync(g_settings.i2c_subaddress, targetVal, g_settings.adapter_index, g_settings.display_index);
             } else if (trackResult == 1002) {
                 ShowSettingsDialog(hWnd, hInst);
             } else if (trackResult == 1003) {
