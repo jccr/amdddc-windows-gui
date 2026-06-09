@@ -562,6 +562,12 @@ LRESULT CALLBACK SettingsWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM 
         break;
     }
 
+    case WM_CTLCOLORSTATIC: {
+        HDC hdc = (HDC)wParam;
+        SetBkMode(hdc, TRANSPARENT);
+        return (LRESULT)GetStockObject(NULL_BRUSH);
+    }
+
     case WM_CLOSE:
         DestroyWindow(hWnd);
         break;
@@ -616,7 +622,7 @@ void ShowSettingsDialog(HWND hParentWnd, HINSTANCE hInst) {
         WS_EX_DLGMODALFRAME | WS_EX_WINDOWEDGE,
         CLASS_NAME,
         L"AMD DDC Input Switcher Settings",
-        WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_CLIPCHILDREN,
+        WS_POPUP | WS_CAPTION | WS_SYSMENU,
         x, y, w, h,
         hParentWnd,
         NULL,
