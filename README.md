@@ -13,20 +13,10 @@
 ### Description
 
 A simple GUI utility to issue the switch input command via DDC to a monitor connected to an AMD GPU.
-Lives in the Windows Tray, and allows key binding inputs to a global hotkey.
-
-Supports additional i2c addresses that are missing from alternative Windows DDC utilities, which enables issues input switching on some LG monitors. 
-Implementing this support is the entire point of this project.
-
-### Building
-
-Built using VS2022
-
-1. Install Visual Studio BuildTools 2022, you can use `winget install Microsoft.VisualStudio.2022.BuildTools`
-2. Run `.\build.bat` to build.
-3. Binary outputs under `.\x64\Release`
 
 ### Features
+
+Enables input switching on LG monitors that require using alternative i2c addresses that are missing from other Windows DDC utilities.
 
 #### Input switching in the Windows tray
 
@@ -35,6 +25,14 @@ Built using VS2022
 
 #### Settings to configure display and hotkeys
 <img width="483" height="355" alt="image" src="https://github.com/user-attachments/assets/5afa8bf8-cedd-4b8b-90b8-c852639e98cd" />
+
+### Development
+
+Built using VS2022
+
+1. Install Visual Studio BuildTools 2022, you can use `winget install Microsoft.VisualStudio.2022.BuildTools`
+2. Run `.\build.bat` to build.
+3. Binary outputs under `.\x64\Release`
 
 
 ### Credits
