@@ -43,6 +43,54 @@ struct RecordedHotkey {
 };
 static RecordedHotkey g_recordedHotkey;
 
+// Working copy of the per-input hotkeys edited while the dialog is open. The single
+// "Global Hotkey" field reflects whichever target input is currently selected; switching
+// the input commits the field to its input and loads the newly-selected input's hotkey.
+static std::vector<HotkeyBinding> g_workingHotkeys;
+static unsigned int g_currentHotkeyInput = 0;
+
+// Store the recorded hotkey for a given input in the working copy (vk == 0 clears it).
+static void CommitHotkey(unsigned int input, WORD vk, WORD mod) {
+    for (auto& hk : g_workingHotkeys) {
+        if (hk.input_value == input) {
+            hk.vk = vk;
+            hk.mod = mod;
+            return;
+        }
+    }
+    g_workingHotkeys.push_back({ input, vk, mod });
+}
+
+// Read the stored hotkey for an input from the working copy (0/0 if none).
+static void LoadHotkeyFor(unsigned int input, WORD& vk, WORD& mod) {
+    for (const auto& hk : g_workingHotkeys) {
+        if (hk.input_value == input) {
+            vk = (WORD)hk.vk;
+            mod = (WORD)hk.mod;
+            return;
+        }
+    }
+    vk = 0;
+    mod = 0;
+}
+
+// Commit the current hotkey field to its input and load the hotkey for the newly-selected input.
+static void SwitchToInput(HWND hWnd, unsigned int newInput) {
+    if (newInput == g_currentHotkeyInput) return;
+    CommitHotkey(g_currentHotkeyInput, g_recordedHotkey.vk, g_recordedHotkey.mod);
+    g_currentHotkeyInput = newInput;
+    LoadHotkeyFor(newInput, g_recordedHotkey.vk, g_recordedHotkey.mod);
+    SetWindowTextW(GetDlgItem(hWnd, ID_HK_HOTKEY),
+        FormatHotkeyString(g_recordedHotkey.vk, g_recordedHotkey.mod).c_str());
+}
+
+// Read the currently-shown target input value from the input combobox.
+static unsigned int ReadInputComboValue(HWND hWnd) {
+    wchar_t valBuf[64];
+    GetWindowTextW(GetDlgItem(hWnd, ID_CB_INPUT), valBuf, 64);
+    return wcstoul(valBuf, nullptr, 16);
+}
+
 // Subclass window procedure for the hotkey edit control
 static LRESULT CALLBACK HotkeyEditSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData) {
     switch (uMsg) {
@@ -268,9 +316,11 @@ static LRESULT CALLBACK SettingsWndProc(HWND hWnd, UINT message, WPARAM wParam, 
             SetWindowTextW(hCbInput, valStr);
         }
 
-        // Setup Hotkey Control
-        g_recordedHotkey.vk = g_settings.hotkey_vk;
-        g_recordedHotkey.mod = g_settings.hotkey_mod;
+        // Setup Hotkey Control: load the per-input hotkeys and show the one for the
+        // currently-selected target input.
+        g_workingHotkeys = g_settings.hotkeys;
+        g_currentHotkeyInput = g_settings.input_value;
+        LoadHotkeyFor(g_currentHotkeyInput, g_recordedHotkey.vk, g_recordedHotkey.mod);
         std::wstring hkText = FormatHotkeyString(g_recordedHotkey.vk, g_recordedHotkey.mod);
         SetWindowTextW(hHkHotkey, hkText.c_str());
 
@@ -278,6 +328,22 @@ static LRESULT CALLBACK SettingsWndProc(HWND hWnd, UINT message, WPARAM wParam, 
     }
 
     case WM_COMMAND: {
+        // Target input changed: move the hotkey field to the newly-selected input.
+        if (LOWORD(wParam) == ID_CB_INPUT) {
+            WORD code = HIWORD(wParam);
+            if (code == CBN_SELCHANGE) {
+                HWND hCbInput = GetDlgItem(hWnd, ID_CB_INPUT);
+                int sel = (int)SendMessageW(hCbInput, CB_GETCURSEL, 0, 0);
+                if (sel != CB_ERR) {
+                    wchar_t buf[64];
+                    SendMessageW(hCbInput, CB_GETLBTEXT, sel, (LPARAM)buf);
+                    SwitchToInput(hWnd, wcstoul(buf, nullptr, 16));
+                }
+            } else if (code == CBN_KILLFOCUS) {
+                SwitchToInput(hWnd, ReadInputComboValue(hWnd));
+            }
+        }
+
         // Test Switch action
         if (LOWORD(wParam) == ID_BTN_TEST) {
             // Read inputs temporarily and trigger
@@ -312,8 +378,6 @@ static LRESULT CALLBACK SettingsWndProc(HWND hWnd, UINT message, WPARAM wParam, 
         if (LOWORD(wParam) == ID_BTN_SAVE) {
             HWND hCbDisplay = GetDlgItem(hWnd, ID_CB_DISPLAY);
             HWND hCbI2C = GetDlgItem(hWnd, ID_CB_I2C);
-            HWND hCbInput = GetDlgItem(hWnd, ID_CB_INPUT);
-            HWND hHkHotkey = GetDlgItem(hWnd, ID_HK_HOTKEY);
 
             int dispSel = (int)SendMessageW(hCbDisplay, CB_GETCURSEL, 0, 0);
             if (dispSel != CB_ERR) {
@@ -326,17 +390,20 @@ static LRESULT CALLBACK SettingsWndProc(HWND hWnd, UINT message, WPARAM wParam, 
             GetWindowTextW(hCbI2C, i2cBuf, 32);
             g_settings.i2c_subaddress = wcstoul(i2cBuf, nullptr, 16);
 
-            wchar_t valBuf[64];
-            GetWindowTextW(hCbInput, valBuf, 64);
-            g_settings.input_value = wcstoul(valBuf, nullptr, 16);
+            g_settings.input_value = ReadInputComboValue(hWnd);
 
-            g_settings.hotkey_vk = g_recordedHotkey.vk;
-            g_settings.hotkey_mod = g_recordedHotkey.mod;
+            // Commit the hotkey shown in the field to whichever input it belongs to,
+            // then persist all bindings (dropping any that were cleared).
+            CommitHotkey(g_currentHotkeyInput, g_recordedHotkey.vk, g_recordedHotkey.mod);
+            g_settings.hotkeys.clear();
+            for (const auto& hk : g_workingHotkeys) {
+                if (hk.vk != 0) g_settings.hotkeys.push_back(hk);
+            }
 
             // Save to settings.ini
             SaveTraySettings(g_settings);
 
-            // Re-register hotkey
+            // Re-register hotkeys
             RegisterGlobalHotkey(g_hHiddenWnd, g_settings);
 
             DestroyWindow(hWnd);

@@ -59,33 +59,38 @@ LRESULT CALLBACK HiddenWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lP
                 { 1103, 0x91, L"HDMI2" }
             };
 
-            // Check if current input_value is custom
-            bool isCustom = true;
-            for (const auto& item : menuInputs) {
-                if (item.value == g_settings.input_value) {
-                    isCustom = false;
-                    break;
+            // Helper to add a custom (non-standard) input value to the menu once.
+            UINT nextId = 1104;
+            auto addCustom = [&](unsigned int value) {
+                for (const auto& item : menuInputs) {
+                    if (item.value == value) return;
                 }
-            }
-
-            if (isCustom) {
                 wchar_t buf[16];
-                swprintf_s(buf, L"0x%X", g_settings.input_value);
-                menuInputs.push_back({ 1104, g_settings.input_value, buf });
+                swprintf_s(buf, L"0x%X", value);
+                menuInputs.push_back({ nextId++, value, buf });
+            };
+
+            // Keep the last-selected target input clickable even if it's a custom value.
+            addCustom(g_settings.input_value);
+
+            // Add a menu entry for any hotkey-bound input that isn't a known input.
+            for (const auto& hk : g_settings.hotkeys) {
+                addCustom(hk.input_value);
             }
 
             for (const auto& item : menuInputs) {
                 std::wstring text = item.name;
-                UINT flags = MF_STRING;
-                if (item.value == g_settings.input_value) {
-                    if (g_settings.hotkey_vk != 0) {
-                        std::wstring hkText = FormatHotkeyString(g_settings.hotkey_vk, g_settings.hotkey_mod);
+                // Show the hotkey hint next to whichever input it switches to.
+                for (const auto& hk : g_settings.hotkeys) {
+                    if (hk.input_value == item.value && hk.vk != 0) {
+                        std::wstring hkText = FormatHotkeyString((WORD)hk.vk, (WORD)hk.mod);
                         if (!hkText.empty()) {
                             text += L"\t" + hkText;
                         }
+                        break;
                     }
                 }
-                AppendMenuW(hMenu, flags, item.id, text.c_str());
+                AppendMenuW(hMenu, MF_STRING, item.id, text.c_str());
             }
 
             AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
@@ -96,15 +101,16 @@ LRESULT CALLBACK HiddenWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lP
             int trackResult = TrackPopupMenu(hMenu, TPM_RETURNCMD | TPM_NONOTIFY, pt.x, pt.y, 0, hWnd, NULL);
             DestroyMenu(hMenu);
 
-            if (trackResult >= 1100 && trackResult <= 1104) {
-                unsigned int targetVal = 0;
-                for (const auto& item : menuInputs) {
-                    if (item.id == (UINT)trackResult) {
-                        targetVal = item.value;
-                        break;
-                    }
+            bool switched = false;
+            for (const auto& item : menuInputs) {
+                if (item.id == (UINT)trackResult) {
+                    ExecuteSwitchAsync(g_settings.i2c_subaddress, item.value, g_settings.adapter_index, g_settings.display_index);
+                    switched = true;
+                    break;
                 }
-                ExecuteSwitchAsync(g_settings.i2c_subaddress, targetVal, g_settings.adapter_index, g_settings.display_index);
+            }
+            if (switched) {
+                // handled above
             } else if (trackResult == 1002) {
                 ShowSettingsDialog(hWnd, hInst);
             } else if (trackResult == 1003) {
@@ -117,8 +123,10 @@ LRESULT CALLBACK HiddenWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lP
     }
 
     case WM_HOTKEY: {
-        if (wParam == 1) {
-            ExecuteSwitchAsync(g_settings.i2c_subaddress, g_settings.input_value, g_settings.adapter_index, g_settings.display_index);
+        // Hotkey id is the binding index + 1; switch to that binding's target input.
+        size_t idx = (size_t)wParam - 1;
+        if (wParam >= 1 && idx < g_settings.hotkeys.size()) {
+            ExecuteSwitchAsync(g_settings.i2c_subaddress, g_settings.hotkeys[idx].input_value, g_settings.adapter_index, g_settings.display_index);
         }
         break;
     }
@@ -220,7 +228,7 @@ int RunTrayApp(HINSTANCE hInstance) {
 
     // Clean up
     Shell_NotifyIconW(NIM_DELETE, &nid);
-    UnregisterHotKey(g_hHiddenWnd, 1);
+    UnregisterGlobalHotkeys(g_hHiddenWnd);
     FreeADL();
 
     return (int)msg.wParam;

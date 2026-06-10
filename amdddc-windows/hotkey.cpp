@@ -1,12 +1,29 @@
 #include "hotkey.h"
 
-// Global Register Hotkey helper
+// Unregister every global hotkey we may have registered.
+void UnregisterGlobalHotkeys(HWND hwnd) {
+    for (int id = 1; id <= MAX_HOTKEY_ID; id++) {
+        UnregisterHotKey(hwnd, id);
+    }
+}
+
+// (Re)register one global hotkey per binding. Hotkey id == binding index + 1.
 void RegisterGlobalHotkey(HWND hwnd, const TraySettings& s) {
-    UnregisterHotKey(hwnd, 1);
-    if (s.hotkey_vk != 0) {
-        if (!RegisterHotKey(hwnd, 1, s.hotkey_mod, s.hotkey_vk)) {
-            MessageBoxW(hwnd, L"Could not register the global hotkey. It might be in use by another program.", L"Hotkey Error", MB_OK | MB_ICONWARNING);
+    UnregisterGlobalHotkeys(hwnd);
+
+    std::wstring failed;
+    for (size_t i = 0; i < s.hotkeys.size() && i < MAX_HOTKEY_ID; i++) {
+        const HotkeyBinding& hk = s.hotkeys[i];
+        if (hk.vk == 0) continue;
+        if (!RegisterHotKey(hwnd, (int)(i + 1), hk.mod, hk.vk)) {
+            if (!failed.empty()) failed += L"\n";
+            failed += L"  • " + FormatHotkeyString((WORD)hk.vk, (WORD)hk.mod);
         }
+    }
+
+    if (!failed.empty()) {
+        std::wstring msg = L"Could not register the following hotkey(s). They may be in use by another program or duplicated:\n\n" + failed;
+        MessageBoxW(hwnd, msg.c_str(), L"Hotkey Error", MB_OK | MB_ICONWARNING);
     }
 }
 

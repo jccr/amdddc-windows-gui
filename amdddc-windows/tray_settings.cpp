@@ -27,8 +27,37 @@ TraySettings LoadTraySettings() {
     GetPrivateProfileStringW(L"Settings", L"InputValue", L"0xD1", buf, 32, iniPath.c_str());
     s.input_value = wcstoul(buf, nullptr, 16);
 
-    s.hotkey_vk = GetPrivateProfileIntW(L"Settings", L"HotkeyVK", 0, iniPath.c_str());
-    s.hotkey_mod = GetPrivateProfileIntW(L"Settings", L"HotkeyMod", 0, iniPath.c_str());
+    int count = GetPrivateProfileIntW(L"Settings", L"HotkeyCount", 0, iniPath.c_str());
+    for (int i = 0; i < count; i++) {
+        wchar_t key[32];
+        HotkeyBinding hk;
+
+        swprintf_s(key, L"Hotkey%dInput", i);
+        GetPrivateProfileStringW(L"Settings", key, L"0x0", buf, 32, iniPath.c_str());
+        hk.input_value = wcstoul(buf, nullptr, 16);
+
+        swprintf_s(key, L"Hotkey%dVK", i);
+        hk.vk = GetPrivateProfileIntW(L"Settings", key, 0, iniPath.c_str());
+
+        swprintf_s(key, L"Hotkey%dMod", i);
+        hk.mod = GetPrivateProfileIntW(L"Settings", key, 0, iniPath.c_str());
+
+        if (hk.vk != 0) {
+            s.hotkeys.push_back(hk);
+        }
+    }
+
+    // Migrate the legacy single-hotkey format (HotkeyVK/HotkeyMod bound to InputValue).
+    if (s.hotkeys.empty()) {
+        unsigned int legacyVk = GetPrivateProfileIntW(L"Settings", L"HotkeyVK", 0, iniPath.c_str());
+        if (legacyVk != 0) {
+            HotkeyBinding hk;
+            hk.input_value = s.input_value;
+            hk.vk = legacyVk;
+            hk.mod = GetPrivateProfileIntW(L"Settings", L"HotkeyMod", 0, iniPath.c_str());
+            s.hotkeys.push_back(hk);
+        }
+    }
 
     return s;
 }
@@ -47,6 +76,34 @@ void SaveTraySettings(const TraySettings& s) {
     swprintf_s(buf, L"0x%X", s.input_value);
     WritePrivateProfileStringW(L"Settings", L"InputValue", buf, iniPath.c_str());
 
-    WritePrivateProfileStringW(L"Settings", L"HotkeyVK", std::to_wstring(s.hotkey_vk).c_str(), iniPath.c_str());
-    WritePrivateProfileStringW(L"Settings", L"HotkeyMod", std::to_wstring(s.hotkey_mod).c_str(), iniPath.c_str());
+    WritePrivateProfileStringW(L"Settings", L"HotkeyCount", std::to_wstring(s.hotkeys.size()).c_str(), iniPath.c_str());
+    for (size_t i = 0; i < s.hotkeys.size(); i++) {
+        const HotkeyBinding& hk = s.hotkeys[i];
+        wchar_t key[32];
+
+        swprintf_s(key, L"Hotkey%zuInput", i);
+        swprintf_s(buf, L"0x%X", hk.input_value);
+        WritePrivateProfileStringW(L"Settings", key, buf, iniPath.c_str());
+
+        swprintf_s(key, L"Hotkey%zuVK", i);
+        WritePrivateProfileStringW(L"Settings", key, std::to_wstring(hk.vk).c_str(), iniPath.c_str());
+
+        swprintf_s(key, L"Hotkey%zuMod", i);
+        WritePrivateProfileStringW(L"Settings", key, std::to_wstring(hk.mod).c_str(), iniPath.c_str());
+    }
+
+    // Remove any trailing entries left over from a previously larger list.
+    for (size_t i = s.hotkeys.size(); i < s.hotkeys.size() + 16; i++) {
+        wchar_t key[32];
+        swprintf_s(key, L"Hotkey%zuInput", i);
+        WritePrivateProfileStringW(L"Settings", key, NULL, iniPath.c_str());
+        swprintf_s(key, L"Hotkey%zuVK", i);
+        WritePrivateProfileStringW(L"Settings", key, NULL, iniPath.c_str());
+        swprintf_s(key, L"Hotkey%zuMod", i);
+        WritePrivateProfileStringW(L"Settings", key, NULL, iniPath.c_str());
+    }
+
+    // Drop the obsolete legacy single-hotkey keys.
+    WritePrivateProfileStringW(L"Settings", L"HotkeyVK", NULL, iniPath.c_str());
+    WritePrivateProfileStringW(L"Settings", L"HotkeyMod", NULL, iniPath.c_str());
 }

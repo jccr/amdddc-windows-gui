@@ -4,14 +4,21 @@
 
 #include <windows.h>
 #include <string>
+#include <vector>
+
+// A global hotkey bound to a specific target input value.
+struct HotkeyBinding {
+    unsigned int input_value = 0; // VCP input value this hotkey switches to (e.g. 0xD1)
+    unsigned int vk = 0;          // Virtual Key code
+    unsigned int mod = 0;         // Modifiers (MOD_CONTROL, MOD_ALT, etc.)
+};
 
 struct TraySettings {
     int adapter_index = 0;
     int display_index = 0;
     unsigned int i2c_subaddress = 0x50; // default to LG alt mode
-    unsigned int input_value = 0xD1;    // default to USB-C
-    unsigned int hotkey_vk = 0;         // Virtual Key code (0 = none)
-    unsigned int hotkey_mod = 0;        // Modifiers (MOD_CONTROL, MOD_ALT, etc.)
+    unsigned int input_value = 0xD1;    // last-selected target input (dialog default)
+    std::vector<HotkeyBinding> hotkeys; // one optional hotkey per target input
 };
 
 // Path to settings.ini, stored alongside the executable.
