@@ -1,3 +1,22 @@
+## Description
+
+A simple GUI utility to issue the switch input command via DDC to a monitor connected to an AMD GPU.
+
+[Download](https://github.com/jccr/amdddc-windows-gui/releases) the latest release.
+
+## Features
+
+Enables input switching on LG monitors that require using alternative i2c addresses that are missing from other Windows DDC utilities.
+
+#### Input switching in the Windows tray
+
+<img width="308" height="183" alt="image" src="https://github.com/user-attachments/assets/5e52e3e8-fc3f-4007-bf67-9a93241f3d65" />
+
+#### Settings to configure display and hotkeys
+<img width="483" height="355" alt="image" src="https://github.com/user-attachments/assets/5afa8bf8-cedd-4b8b-90b8-c852639e98cd" />
+
+## Disclaimer
+
 > [!IMPORTANT]
 > This GUI utility will **_only_** work with an AMD GPU!
 > 
@@ -10,23 +29,8 @@
 > [!Warning]
 > This utility sends data over the i2c bus.  Use at your own risk.
 
-### Description
 
-A simple GUI utility to issue the switch input command via DDC to a monitor connected to an AMD GPU.
-
-### Features
-
-Enables input switching on LG monitors that require using alternative i2c addresses that are missing from other Windows DDC utilities.
-
-#### Input switching in the Windows tray
-
-<img width="308" height="183" alt="image" src="https://github.com/user-attachments/assets/5e52e3e8-fc3f-4007-bf67-9a93241f3d65" />
-
-
-#### Settings to configure display and hotkeys
-<img width="483" height="355" alt="image" src="https://github.com/user-attachments/assets/5afa8bf8-cedd-4b8b-90b8-c852639e98cd" />
-
-### Development
+## Development
 
 Built using VS2022
 
@@ -35,7 +39,7 @@ Built using VS2022
 3. Binary outputs under `.\x64\Release`
 
 
-### Credits
+## Credits
 
 This is based from the original CLI utility, [amildahl/amdddc-windows](https://github.com/amildahl/amdddc-windows).
 
