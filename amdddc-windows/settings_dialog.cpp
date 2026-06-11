@@ -16,6 +16,51 @@
 HWND g_hSettingsWnd = NULL;
 static HFONT g_hFont = NULL;
 
+// Helper to check if the application is set to run at Windows startup
+static bool IsRunAtStartupEnabled() {
+    HKEY hKey;
+    bool enabled = false;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        wchar_t szPath[MAX_PATH] = { 0 };
+        DWORD dwType = 0;
+        DWORD dwSize = sizeof(szPath);
+        if (RegQueryValueExW(hKey, L"AMDLGInputSwitch", NULL, &dwType, (LPBYTE)szPath, &dwSize) == ERROR_SUCCESS) {
+            if (dwType == REG_SZ && wcslen(szPath) > 0) {
+                wchar_t szCurrentPath[MAX_PATH] = { 0 };
+                GetModuleFileNameW(NULL, szCurrentPath, MAX_PATH);
+                
+                std::wstring regPath(szPath);
+                std::wstring currentPath(szCurrentPath);
+                
+                // Strip quotes if present
+                if (regPath.length() >= 2 && regPath.front() == L'"' && regPath.back() == L'"') {
+                    regPath = regPath.substr(1, regPath.length() - 2);
+                }
+                
+                enabled = (_wcsicmp(regPath.c_str(), currentPath.c_str()) == 0);
+            }
+        }
+        RegCloseKey(hKey);
+    }
+    return enabled;
+}
+
+// Helper to enable or disable running at Windows startup
+static void SetRunAtStartup(bool enable) {
+    HKEY hKey;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, KEY_WRITE, &hKey) == ERROR_SUCCESS) {
+        if (enable) {
+            wchar_t szPath[MAX_PATH] = { 0 };
+            GetModuleFileNameW(NULL, szPath, MAX_PATH);
+            std::wstring quotedPath = L"\"" + std::wstring(szPath) + L"\"";
+            RegSetValueExW(hKey, L"AMDLGInputSwitch", 0, REG_SZ, (const BYTE*)quotedPath.c_str(), (DWORD)((quotedPath.length() + 1) * sizeof(wchar_t)));
+        } else {
+            RegDeleteValueW(hKey, L"AMDLGInputSwitch");
+        }
+        RegCloseKey(hKey);
+    }
+}
+
 // Control IDs for Settings Window
 enum ControlIDs {
     ID_GRP_DISPLAY = 100,
@@ -31,6 +76,7 @@ enum ControlIDs {
     ID_GRP_HOTKEY,
     ID_LBL_HOTKEY,
     ID_HK_HOTKEY,
+    ID_CHK_STARTUP,
     ID_BTN_TEST,
     ID_BTN_SAVE,
     ID_BTN_CANCEL
@@ -187,6 +233,8 @@ static void UpdateLayout(HWND hWnd, UINT dpi) {
     HWND hLblHotkey = GetDlgItem(hWnd, ID_LBL_HOTKEY);
     HWND hHkHotkey = GetDlgItem(hWnd, ID_HK_HOTKEY);
 
+    HWND hChkStartup = GetDlgItem(hWnd, ID_CHK_STARTUP);
+
     HWND hBtnTest = GetDlgItem(hWnd, ID_BTN_TEST);
     HWND hBtnSave = GetDlgItem(hWnd, ID_BTN_SAVE);
     HWND hBtnCancel = GetDlgItem(hWnd, ID_BTN_CANCEL);
@@ -204,10 +252,13 @@ static void UpdateLayout(HWND hWnd, UINT dpi) {
     if (hLblHotkey) MoveWindow(hLblHotkey, ScaleDpi(20, dpi), ScaleDpi(165, dpi), ScaleDpi(95, dpi), ScaleDpi(18, dpi), TRUE);
     if (hHkHotkey) MoveWindow(hHkHotkey, ScaleDpi(120, dpi), ScaleDpi(162, dpi), ScaleDpi(245, dpi), ScaleDpi(22, dpi), TRUE);
 
+    // Run at startup Checkbox
+    if (hChkStartup) MoveWindow(hChkStartup, ScaleDpi(15, dpi), ScaleDpi(213, dpi), ScaleDpi(200, dpi), ScaleDpi(20, dpi), TRUE);
+
     // Action Buttons
-    if (hBtnTest) MoveWindow(hBtnTest, ScaleDpi(10, dpi), ScaleDpi(215, dpi), ScaleDpi(100, dpi), ScaleDpi(26, dpi), TRUE);
-    if (hBtnSave) MoveWindow(hBtnSave, ScaleDpi(175, dpi), ScaleDpi(215, dpi), ScaleDpi(95, dpi), ScaleDpi(26, dpi), TRUE);
-    if (hBtnCancel) MoveWindow(hBtnCancel, ScaleDpi(280, dpi), ScaleDpi(215, dpi), ScaleDpi(95, dpi), ScaleDpi(26, dpi), TRUE);
+    if (hBtnTest) MoveWindow(hBtnTest, ScaleDpi(10, dpi), ScaleDpi(243, dpi), ScaleDpi(100, dpi), ScaleDpi(26, dpi), TRUE);
+    if (hBtnSave) MoveWindow(hBtnSave, ScaleDpi(175, dpi), ScaleDpi(243, dpi), ScaleDpi(95, dpi), ScaleDpi(26, dpi), TRUE);
+    if (hBtnCancel) MoveWindow(hBtnCancel, ScaleDpi(280, dpi), ScaleDpi(243, dpi), ScaleDpi(95, dpi), ScaleDpi(26, dpi), TRUE);
 }
 
 // Settings Dialog / Window Procedure
@@ -243,6 +294,10 @@ static LRESULT CALLBACK SettingsWndProc(HWND hWnd, UINT message, WPARAM wParam, 
         HWND hHkHotkey = CreateWindowExW(0, L"EDIT", NULL, WS_CHILD | WS_VISIBLE | WS_BORDER | ES_READONLY | ES_CENTER | WS_TABSTOP,
             0, 0, 0, 0, hWnd, (HMENU)ID_HK_HOTKEY, NULL, NULL);
         SetWindowSubclass(hHkHotkey, HotkeyEditSubclassProc, ID_HK_HOTKEY, 0);
+
+        // Run at startup Checkbox
+        CreateWindowExW(0, L"BUTTON", L"Run at startup", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX | WS_TABSTOP,
+            0, 0, 0, 0, hWnd, (HMENU)ID_CHK_STARTUP, NULL, NULL);
 
         // Action Buttons
         CreateWindowExW(0, L"BUTTON", L"Test Switch", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP,
@@ -324,6 +379,12 @@ static LRESULT CALLBACK SettingsWndProc(HWND hWnd, UINT message, WPARAM wParam, 
         std::wstring hkText = FormatHotkeyString(g_recordedHotkey.vk, g_recordedHotkey.mod);
         SetWindowTextW(hHkHotkey, hkText.c_str());
 
+        // Initialize Run at startup checkbox
+        HWND hChkStartup = GetDlgItem(hWnd, ID_CHK_STARTUP);
+        if (hChkStartup) {
+            SendMessageW(hChkStartup, BM_SETCHECK, IsRunAtStartupEnabled() ? BST_CHECKED : BST_UNCHECKED, 0);
+        }
+
         break;
     }
 
@@ -402,6 +463,13 @@ static LRESULT CALLBACK SettingsWndProc(HWND hWnd, UINT message, WPARAM wParam, 
 
             // Save to settings.ini
             SaveTraySettings(g_settings);
+
+            // Update Run at startup registry entry
+            HWND hChkStartup = GetDlgItem(hWnd, ID_CHK_STARTUP);
+            if (hChkStartup) {
+                bool isChecked = (SendMessageW(hChkStartup, BM_GETCHECK, 0, 0) == BST_CHECKED);
+                SetRunAtStartup(isChecked);
+            }
 
             // Re-register hotkeys
             RegisterGlobalHotkey(g_hHiddenWnd, g_settings);
@@ -534,7 +602,7 @@ void ShowSettingsDialog(HWND hParentWnd, HINSTANCE hInst) {
     // Scale initial window size based on system DPI
     UINT dpi = GetWindowDpi(GetDesktopWindow());
     int w = ScaleDpi(400, dpi);
-    int h = ScaleDpi(290, dpi);
+    int h = ScaleDpi(320, dpi);
 
     int screenWidth = GetSystemMetrics(SM_CXSCREEN);
     int screenHeight = GetSystemMetrics(SM_CYSCREEN);
