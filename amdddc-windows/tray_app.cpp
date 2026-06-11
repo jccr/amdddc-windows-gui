@@ -8,6 +8,7 @@
 #include "hotkey.h"
 #include "resource.h"
 #include "adl.h"
+#include "usb_monitor.h"
 #include <commctrl.h>
 #include <vector>
 #include <string>
@@ -131,6 +132,10 @@ LRESULT CALLBACK HiddenWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lP
         break;
     }
 
+    case WM_DEVICECHANGE:
+        HandleUsbDeviceChange(wParam, lParam);
+        break;
+
     case WM_DESTROY:
         PostQuitMessage(0);
         break;
@@ -198,6 +203,9 @@ int RunTrayApp(HINSTANCE hInstance) {
         return 1;
     }
 
+    // Initialize USB Monitor
+    InitializeUsbMonitor(g_hHiddenWnd);
+
     // Opt the menu owner window into dark mode so tray popup menus render dark.
     AllowDarkModeForWindow(g_hHiddenWnd);
 
@@ -227,6 +235,7 @@ int RunTrayApp(HINSTANCE hInstance) {
     }
 
     // Clean up
+    CleanupUsbMonitor();
     Shell_NotifyIconW(NIM_DELETE, &nid);
     UnregisterGlobalHotkeys(g_hHiddenWnd);
     FreeADL();

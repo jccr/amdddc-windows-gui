@@ -7,6 +7,7 @@
 #include "switch_input.h"
 #include "hotkey.h"
 #include "resource.h"
+#include "usb_monitor.h"
 #include <commctrl.h>
 #include <vector>
 #include <string>
@@ -31,6 +32,13 @@ enum ControlIDs {
     ID_GRP_HOTKEY,
     ID_LBL_HOTKEY,
     ID_HK_HOTKEY,
+    ID_GRP_USB,
+    ID_LBL_USB_DEV,
+    ID_CB_USB_DEV,
+    ID_LBL_USB_ARR,
+    ID_CB_USB_ARR,
+    ID_LBL_USB_REM,
+    ID_CB_USB_REM,
     ID_BTN_TEST,
     ID_BTN_SAVE,
     ID_BTN_CANCEL
@@ -48,6 +56,7 @@ static RecordedHotkey g_recordedHotkey;
 // the input commits the field to its input and loads the newly-selected input's hotkey.
 static std::vector<HotkeyBinding> g_workingHotkeys;
 static unsigned int g_currentHotkeyInput = 0;
+static std::vector<UsbDeviceInfo> g_enumeratedUsbDevices;
 
 // Store the recorded hotkey for a given input in the working copy (vk == 0 clears it).
 static void CommitHotkey(unsigned int input, WORD vk, WORD mod) {
@@ -187,6 +196,14 @@ static void UpdateLayout(HWND hWnd, UINT dpi) {
     HWND hLblHotkey = GetDlgItem(hWnd, ID_LBL_HOTKEY);
     HWND hHkHotkey = GetDlgItem(hWnd, ID_HK_HOTKEY);
 
+    HWND hGrpUsb = GetDlgItem(hWnd, ID_GRP_USB);
+    HWND hLblUsbDev = GetDlgItem(hWnd, ID_LBL_USB_DEV);
+    HWND hCbUsbDev = GetDlgItem(hWnd, ID_CB_USB_DEV);
+    HWND hLblUsbArr = GetDlgItem(hWnd, ID_LBL_USB_ARR);
+    HWND hCbUsbArr = GetDlgItem(hWnd, ID_CB_USB_ARR);
+    HWND hLblUsbRem = GetDlgItem(hWnd, ID_LBL_USB_REM);
+    HWND hCbUsbRem = GetDlgItem(hWnd, ID_CB_USB_REM);
+
     HWND hBtnTest = GetDlgItem(hWnd, ID_BTN_TEST);
     HWND hBtnSave = GetDlgItem(hWnd, ID_BTN_SAVE);
     HWND hBtnCancel = GetDlgItem(hWnd, ID_BTN_CANCEL);
@@ -204,10 +221,19 @@ static void UpdateLayout(HWND hWnd, UINT dpi) {
     if (hLblHotkey) MoveWindow(hLblHotkey, ScaleDpi(20, dpi), ScaleDpi(165, dpi), ScaleDpi(95, dpi), ScaleDpi(18, dpi), TRUE);
     if (hHkHotkey) MoveWindow(hHkHotkey, ScaleDpi(120, dpi), ScaleDpi(162, dpi), ScaleDpi(245, dpi), ScaleDpi(22, dpi), TRUE);
 
+    // GroupBox 3 (USB Binding)
+    if (hGrpUsb) MoveWindow(hGrpUsb, ScaleDpi(10, dpi), ScaleDpi(215, dpi), ScaleDpi(365, dpi), ScaleDpi(95, dpi), TRUE);
+    if (hLblUsbDev) MoveWindow(hLblUsbDev, ScaleDpi(20, dpi), ScaleDpi(235, dpi), ScaleDpi(95, dpi), ScaleDpi(18, dpi), TRUE);
+    if (hCbUsbDev) MoveWindow(hCbUsbDev, ScaleDpi(120, dpi), ScaleDpi(232, dpi), ScaleDpi(245, dpi), ScaleDpi(150, dpi), TRUE);
+    if (hLblUsbArr) MoveWindow(hLblUsbArr, ScaleDpi(20, dpi), ScaleDpi(272, dpi), ScaleDpi(50, dpi), ScaleDpi(18, dpi), TRUE);
+    if (hCbUsbArr) MoveWindow(hCbUsbArr, ScaleDpi(75, dpi), ScaleDpi(269, dpi), ScaleDpi(105, dpi), ScaleDpi(100, dpi), TRUE);
+    if (hLblUsbRem) MoveWindow(hLblUsbRem, ScaleDpi(200, dpi), ScaleDpi(272, dpi), ScaleDpi(50, dpi), ScaleDpi(18, dpi), TRUE);
+    if (hCbUsbRem) MoveWindow(hCbUsbRem, ScaleDpi(255, dpi), ScaleDpi(269, dpi), ScaleDpi(110, dpi), ScaleDpi(100, dpi), TRUE);
+
     // Action Buttons
-    if (hBtnTest) MoveWindow(hBtnTest, ScaleDpi(10, dpi), ScaleDpi(215, dpi), ScaleDpi(100, dpi), ScaleDpi(26, dpi), TRUE);
-    if (hBtnSave) MoveWindow(hBtnSave, ScaleDpi(175, dpi), ScaleDpi(215, dpi), ScaleDpi(95, dpi), ScaleDpi(26, dpi), TRUE);
-    if (hBtnCancel) MoveWindow(hBtnCancel, ScaleDpi(280, dpi), ScaleDpi(215, dpi), ScaleDpi(95, dpi), ScaleDpi(26, dpi), TRUE);
+    if (hBtnTest) MoveWindow(hBtnTest, ScaleDpi(10, dpi), ScaleDpi(320, dpi), ScaleDpi(100, dpi), ScaleDpi(26, dpi), TRUE);
+    if (hBtnSave) MoveWindow(hBtnSave, ScaleDpi(175, dpi), ScaleDpi(320, dpi), ScaleDpi(95, dpi), ScaleDpi(26, dpi), TRUE);
+    if (hBtnCancel) MoveWindow(hBtnCancel, ScaleDpi(280, dpi), ScaleDpi(320, dpi), ScaleDpi(95, dpi), ScaleDpi(26, dpi), TRUE);
 }
 
 // Settings Dialog / Window Procedure
@@ -243,6 +269,27 @@ static LRESULT CALLBACK SettingsWndProc(HWND hWnd, UINT message, WPARAM wParam, 
         HWND hHkHotkey = CreateWindowExW(0, L"EDIT", NULL, WS_CHILD | WS_VISIBLE | WS_BORDER | ES_READONLY | ES_CENTER | WS_TABSTOP,
             0, 0, 0, 0, hWnd, (HMENU)ID_HK_HOTKEY, NULL, NULL);
         SetWindowSubclass(hHkHotkey, HotkeyEditSubclassProc, ID_HK_HOTKEY, 0);
+
+        CreateWindowExW(0, L"BUTTON", L"USB Binding", WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
+            0, 0, 0, 0, hWnd, (HMENU)ID_GRP_USB, NULL, NULL);
+
+        CreateWindowExW(0, L"STATIC", L"Select Device:", WS_CHILD | WS_VISIBLE | SS_LEFT,
+            0, 0, 0, 0, hWnd, (HMENU)ID_LBL_USB_DEV, NULL, NULL);
+
+        CreateWindowExW(0, L"COMBOBOX", NULL, WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP,
+            0, 0, 0, 0, hWnd, (HMENU)ID_CB_USB_DEV, NULL, NULL);
+
+        CreateWindowExW(0, L"STATIC", L"Attach:", WS_CHILD | WS_VISIBLE | SS_LEFT,
+            0, 0, 0, 0, hWnd, (HMENU)ID_LBL_USB_ARR, NULL, NULL);
+
+        CreateWindowExW(0, L"COMBOBOX", NULL, WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP,
+            0, 0, 0, 0, hWnd, (HMENU)ID_CB_USB_ARR, NULL, NULL);
+
+        CreateWindowExW(0, L"STATIC", L"Detach:", WS_CHILD | WS_VISIBLE | SS_LEFT,
+            0, 0, 0, 0, hWnd, (HMENU)ID_LBL_USB_REM, NULL, NULL);
+
+        CreateWindowExW(0, L"COMBOBOX", NULL, WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP,
+            0, 0, 0, 0, hWnd, (HMENU)ID_CB_USB_REM, NULL, NULL);
 
         // Action Buttons
         CreateWindowExW(0, L"BUTTON", L"Test Switch", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP,
@@ -324,6 +371,62 @@ static LRESULT CALLBACK SettingsWndProc(HWND hWnd, UINT message, WPARAM wParam, 
         std::wstring hkText = FormatHotkeyString(g_recordedHotkey.vk, g_recordedHotkey.mod);
         SetWindowTextW(hHkHotkey, hkText.c_str());
 
+        // Populate USB Devices
+        HWND hCbUsb = GetDlgItem(hWnd, ID_CB_USB_DEV);
+        if (hCbUsb) {
+            SendMessageW(hCbUsb, CB_ADDSTRING, 0, (LPARAM)L"None");
+
+            g_enumeratedUsbDevices = EnumerateConnectedUsbDevices();
+            int selIdx = 0; // Default to "None"
+
+            // Case-insensitive match check helper for device paths
+            auto pathsMatch = [](const std::wstring& p1, const std::wstring& p2) -> bool {
+                if (p1.length() != p2.length()) return false;
+                for (size_t i = 0; i < p1.length(); i++) {
+                    if (towupper(p1[i]) != towupper(p2[i])) return false;
+                }
+                return true;
+            };
+
+            for (size_t i = 0; i < g_enumeratedUsbDevices.size(); i++) {
+                int idx = (int)SendMessageW(hCbUsb, CB_ADDSTRING, 0, (LPARAM)g_enumeratedUsbDevices[i].label.c_str());
+
+                // Check if it matches saved path
+                if (!g_settings.usb_device_path.empty() && pathsMatch(g_enumeratedUsbDevices[i].path, g_settings.usb_device_path)) {
+                    selIdx = idx;
+                }
+            }
+            // Add placeholder if saved device is disconnected
+            if (selIdx == 0 && !g_settings.usb_device_path.empty()) {
+                std::wstring label = g_settings.usb_device_name + L" [Disconnected]";
+                selIdx = (int)SendMessageW(hCbUsb, CB_ADDSTRING, 0, (LPARAM)label.c_str());
+            }
+            SendMessageW(hCbUsb, CB_SETCURSEL, selIdx, 0);
+        }
+
+        // Populate USB Arrival/Removal Input values
+        HWND hCbArr = GetDlgItem(hWnd, ID_CB_USB_ARR);
+        HWND hCbRem = GetDlgItem(hWnd, ID_CB_USB_REM);
+
+        auto populateInputOptions = [](HWND hCb, unsigned int currentValue) {
+            SendMessageW(hCb, CB_ADDSTRING, 0, (LPARAM)L"None");
+            SendMessageW(hCb, CB_ADDSTRING, 0, (LPARAM)L"0xD0 (DP1)");
+            SendMessageW(hCb, CB_ADDSTRING, 0, (LPARAM)L"0xD1 (USB-C)");
+            SendMessageW(hCb, CB_ADDSTRING, 0, (LPARAM)L"0x90 (HDMI1)");
+            SendMessageW(hCb, CB_ADDSTRING, 0, (LPARAM)L"0x91 (HDMI2)");
+
+            int selectIdx = 0;
+            if (currentValue == 0xD0) selectIdx = 1;
+            else if (currentValue == 0xD1) selectIdx = 2;
+            else if (currentValue == 0x90) selectIdx = 3;
+            else if (currentValue == 0x91) selectIdx = 4;
+
+            SendMessageW(hCb, CB_SETCURSEL, selectIdx, 0);
+        };
+
+        if (hCbArr) populateInputOptions(hCbArr, g_settings.usb_arrival_input);
+        if (hCbRem) populateInputOptions(hCbRem, g_settings.usb_removal_input);
+
         break;
     }
 
@@ -399,6 +502,37 @@ static LRESULT CALLBACK SettingsWndProc(HWND hWnd, UINT message, WPARAM wParam, 
             for (const auto& hk : g_workingHotkeys) {
                 if (hk.vk != 0) g_settings.hotkeys.push_back(hk);
             }
+
+            // Save USB Binding
+            HWND hCbUsb = GetDlgItem(hWnd, ID_CB_USB_DEV);
+            HWND hCbArr = GetDlgItem(hWnd, ID_CB_USB_ARR);
+            HWND hCbRem = GetDlgItem(hWnd, ID_CB_USB_REM);
+
+            int usbSel = (int)SendMessageW(hCbUsb, CB_GETCURSEL, 0, 0);
+            if (usbSel == CB_ERR || usbSel == 0) {
+                g_settings.usb_device_path = L"";
+                g_settings.usb_device_name = L"";
+            } else {
+                if (usbSel - 1 < (int)g_enumeratedUsbDevices.size()) {
+                    g_settings.usb_device_path = g_enumeratedUsbDevices[usbSel - 1].path;
+                    g_settings.usb_device_name = g_enumeratedUsbDevices[usbSel - 1].friendly_name;
+                } else {
+                    // It's the placeholder (device is disconnected, user left it selected)
+                    // Keep existing path and name as is.
+                }
+            }
+
+            auto getComboValue = [](HWND hCb) -> unsigned int {
+                int sel = (int)SendMessageW(hCb, CB_GETCURSEL, 0, 0);
+                if (sel == CB_ERR || sel == 0) return 0; // "None"
+
+                wchar_t buf[64];
+                SendMessageW(hCb, CB_GETLBTEXT, sel, (LPARAM)buf);
+                return wcstoul(buf, nullptr, 16);
+            };
+
+            if (hCbArr) g_settings.usb_arrival_input = getComboValue(hCbArr);
+            if (hCbRem) g_settings.usb_removal_input = getComboValue(hCbRem);
 
             // Save to settings.ini
             SaveTraySettings(g_settings);
@@ -534,7 +668,7 @@ void ShowSettingsDialog(HWND hParentWnd, HINSTANCE hInst) {
     // Scale initial window size based on system DPI
     UINT dpi = GetWindowDpi(GetDesktopWindow());
     int w = ScaleDpi(400, dpi);
-    int h = ScaleDpi(290, dpi);
+    int h = ScaleDpi(390, dpi);
 
     int screenWidth = GetSystemMetrics(SM_CXSCREEN);
     int screenHeight = GetSystemMetrics(SM_CYSCREEN);

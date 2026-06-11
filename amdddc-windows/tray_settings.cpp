@@ -47,6 +47,20 @@ TraySettings LoadTraySettings() {
         }
     }
 
+    wchar_t pathBuf[1024];
+    GetPrivateProfileStringW(L"Settings", L"UsbDevicePath", L"", pathBuf, 1024, iniPath.c_str());
+    s.usb_device_path = pathBuf;
+
+    wchar_t nameBuf[256];
+    GetPrivateProfileStringW(L"Settings", L"UsbDeviceName", L"", nameBuf, 256, iniPath.c_str());
+    s.usb_device_name = nameBuf;
+
+    GetPrivateProfileStringW(L"Settings", L"UsbArrivalInput", L"0x0", buf, 32, iniPath.c_str());
+    s.usb_arrival_input = wcstoul(buf, nullptr, 16);
+
+    GetPrivateProfileStringW(L"Settings", L"UsbRemovalInput", L"0x0", buf, 32, iniPath.c_str());
+    s.usb_removal_input = wcstoul(buf, nullptr, 16);
+
     // Migrate the legacy single-hotkey format (HotkeyVK/HotkeyMod bound to InputValue).
     if (s.hotkeys.empty()) {
         unsigned int legacyVk = GetPrivateProfileIntW(L"Settings", L"HotkeyVK", 0, iniPath.c_str());
@@ -91,6 +105,15 @@ void SaveTraySettings(const TraySettings& s) {
         swprintf_s(key, L"Hotkey%zuMod", i);
         WritePrivateProfileStringW(L"Settings", key, std::to_wstring(hk.mod).c_str(), iniPath.c_str());
     }
+
+    WritePrivateProfileStringW(L"Settings", L"UsbDevicePath", s.usb_device_path.c_str(), iniPath.c_str());
+    WritePrivateProfileStringW(L"Settings", L"UsbDeviceName", s.usb_device_name.c_str(), iniPath.c_str());
+
+    swprintf_s(buf, L"0x%X", s.usb_arrival_input);
+    WritePrivateProfileStringW(L"Settings", L"UsbArrivalInput", buf, iniPath.c_str());
+
+    swprintf_s(buf, L"0x%X", s.usb_removal_input);
+    WritePrivateProfileStringW(L"Settings", L"UsbRemovalInput", buf, iniPath.c_str());
 
     // Remove any trailing entries left over from a previously larger list.
     for (size_t i = s.hotkeys.size(); i < s.hotkeys.size() + 16; i++) {

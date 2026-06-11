@@ -19,6 +19,11 @@ struct TraySettings {
     unsigned int i2c_subaddress = 0x50; // default to LG alt mode
     unsigned int input_value = 0xD1;    // last-selected target input (dialog default)
     std::vector<HotkeyBinding> hotkeys; // one optional hotkey per target input
+
+    std::wstring usb_device_path = L"";
+    std::wstring usb_device_name = L"";
+    unsigned int usb_arrival_input = 0;  // 0 means disabled/none
+    unsigned int usb_removal_input = 0;  // 0 means disabled/none
 };
 
 // Path to settings.ini, stored alongside the executable.

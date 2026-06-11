@@ -139,6 +139,7 @@
     <ClCompile Include="switch_input.cpp" />
     <ClCompile Include="tray_app.cpp" />
     <ClCompile Include="tray_settings.cpp" />
+    <ClCompile Include="usb_monitor.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include=".gitignore" />
@@ -157,6 +158,7 @@
     <ClInclude Include="switch_input.h" />
     <ClInclude Include="tray_app.h" />
     <ClInclude Include="tray_settings.h" />
+    <ClInclude Include="usb_monitor.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
