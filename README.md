@@ -2,6 +2,8 @@
 
 A simple GUI utility to issue the switch input command via DDC to a monitor connected to an AMD GPU.
 
+Looking for the macOS version? Check out [ddc-input-switcher-macos](https://github.com/jccr/ddc-input-switcher-macos).
+
 [Download](https://github.com/jccr/amdddc-windows-gui/releases) the latest release.
 
 ## Features
